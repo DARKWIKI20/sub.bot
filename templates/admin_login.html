@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ورود به پنل مدیریت</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
+    <style>body { font-family: Vazirmatn FD, sans-serif; }</style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-slate-800 p-8 rounded-3xl border border-slate-700 w-full max-w-md shadow-2xl">
+        <h2 class="text-xl font-bold mb-6 text-center">ورود به پنل مدیریت ساب‌اسکریپشن</h2>
+        {% if error %}
+        <div class="p-3 mb-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center">
+            {{ error }}
+        </div>
+        {% endif %}
+        <form action="/admin/login" method="post" class="space-y-4">
+            <div>
+                <label class="block text-xs text-slate-400 mb-2">رمز عبور امنیتی پنل</label>
+                <input type="password" name="password" required autofocus class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 text-left font-mono">
+            </div>
+            <button type="submit" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 font-bold rounded-xl text-sm transition-colors shadow-lg">ورود</button>
+        </form>
+    </div>
+</body>
+</html>
