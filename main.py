@@ -16,15 +16,16 @@ PUBLIC_URL = os.getenv("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "SuperSecretLongPassword_987654321_ChangeMe!")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
+# ذخیره‌سازی ابری روی Persistent Volume در دیتاسنتر
 DATA_DIR = "/data" if os.path.exists("/data") else "."
-DB_FILE = os.path.join(DATA_DIR, "usage_history.db")
+DB_FILE = os.path.join(DATA_DIR, "datacenter_subs.db")
 COOKIE_NAME = "admin_session"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-CACHE_TTL = 120
+CACHE_TTL = 90
 sub_cache = {}
 
-# ----------------- پایگاه داده -----------------
+# ----------------- دیتابیس دیتاسنتر -----------------
 def get_db():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
@@ -44,29 +45,37 @@ def init_db():
         """)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS usage_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
                 token TEXT NOT NULL,
                 ts INTEGER NOT NULL,
-                used_bytes INTEGER NOT NULL,
-                PRIMARY KEY (token, ts)
+                used_bytes INTEGER NOT NULL
             )
         """)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_token_ts ON usage_logs(token, ts)")
         conn.commit()
 
 init_db()
 
-def record_usage_snapshot(token: str, used_bytes: int):
-    bucket_ts = int(time.time() // 600) * 600
-    cutoff = int(time.time()) - (95 * 86400)
+def record_real_usage(token: str, used_bytes: int):
+    now = int(time.time())
     with get_db() as conn:
-        conn.execute(
-            "INSERT INTO usage_logs (token, ts, used_bytes) VALUES (?, ?, ?) "
-            "ON CONFLICT(token, ts) DO UPDATE SET used_bytes = excluded.used_bytes",
-            (token, bucket_ts, used_bytes)
-        )
-        conn.execute("DELETE FROM usage_logs WHERE ts < ?", (cutoff,))
-        conn.commit()
+        last = conn.execute(
+            "SELECT used_bytes FROM usage_logs WHERE token = ? ORDER BY ts DESC LIMIT 1",
+            (token,)
+        ).fetchone()
+        
+        # تنها در صورتی که دیتای جدید باشد یا بازه زمانی گذشته باشد ثبت می‌شود
+        if not last or last["used_bytes"] != used_bytes:
+            conn.execute(
+                "INSERT INTO usage_logs (token, ts, used_bytes) VALUES (?, ?, ?)",
+                (token, now, used_bytes)
+            )
+            # نگهداری سوابق تا ۱۰۰ روز اخیر
+            cutoff = now - (100 * 86400)
+            conn.execute("DELETE FROM usage_logs WHERE ts < ?", (cutoff,))
+            conn.commit()
 
-# ----------------- چرخه حیات و وب‌هوک -----------------
+# ----------------- چرخه حیات -----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if BOT_TOKEN and PUBLIC_URL != "localhost:8000":
@@ -81,7 +90,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# ----------------- توابع کمکی و تاریخ شمسی -----------------
+# ----------------- توابع کمکی تقویم و حجم -----------------
 JALALI_MONTHS = [
     "", "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
     "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"
@@ -141,15 +150,16 @@ def format_bytes(size_bytes: int) -> str:
         return f"{size_bytes / (1024 ** 3):.2f} GB"
     return f"{size_bytes / (1024 ** 2):.2f} MB"
 
-def build_chart_datasets(token: str, current_used_bytes: int) -> dict:
+# ----------------- تولید آمار مصرف واقعی -----------------
+def build_real_chart_datasets(token: str, current_used_bytes: int) -> dict:
     now = int(time.time())
     periods = {
-        "1h":  {"sec": 3600,       "points": 12, "time_label": True},
-        "12h": {"sec": 12 * 3600,  "points": 12, "time_label": True},
-        "24h": {"sec": 24 * 3600,  "points": 12, "time_label": True},
-        "7d":  {"sec": 7 * 86400,  "points": 14, "time_label": False},
-        "30d": {"sec": 30 * 86400, "points": 15, "time_label": False},
-        "90d": {"sec": 90 * 86400, "points": 15, "time_label": False},
+        "1h":  {"sec": 3600,       "points": 6, "time_label": True},
+        "12h": {"sec": 12 * 3600,  "points": 6, "time_label": True},
+        "24h": {"sec": 24 * 3600,  "points": 6, "time_label": True},
+        "7d":  {"sec": 7 * 86400,  "points": 7, "time_label": False},
+        "30d": {"sec": 30 * 86400, "points": 8, "time_label": False},
+        "90d": {"sec": 90 * 86400, "points": 8, "time_label": False},
     }
 
     with get_db() as conn:
@@ -161,47 +171,40 @@ def build_chart_datasets(token: str, current_used_bytes: int) -> dict:
     result = {}
     for key, cfg in periods.items():
         start_ts = now - cfg["sec"]
-        filtered = [r for r in rows if r["ts"] >= start_ts]
         n = cfg["points"]
         step = cfg["sec"] // max(1, (n - 1))
 
         axis_labels = []
         tooltip_dates = []
-        values = []
+        bucket_deltas = []
 
-        if len(filtered) >= 2:
-            raw_vals = []
-            for i in range(n):
-                t_point = start_ts + i * step
-                axis_labels.append(ts_to_axis_label(t_point, cfg["time_label"]))
-                tooltip_dates.append(ts_to_tooltip_date(t_point, cfg["time_label"]))
-                closest = min(filtered, key=lambda r: abs(r["ts"] - t_point))
-                raw_vals.append(max(0, closest["used_bytes"]))
-            diffs = [max(0, raw_vals[i] - raw_vals[i - 1]) for i in range(1, len(raw_vals))]
-            diffs.insert(0, max(0, raw_vals[0] - filtered[0]["used_bytes"]) if filtered else 0)
-            if sum(diffs) == 0:
-                import math
-                diffs = [int(current_used_bytes * (0.2 + 0.8 * math.sin(math.pi * i / (n - 1)))) for i in range(n)]
-            values = diffs
-            total_period = max(0, filtered[-1]["used_bytes"] - filtered[0]["used_bytes"])
-            if total_period == 0:
-                total_period = current_used_bytes
-        else:
-            import math
-            for i in range(n):
-                t_point = start_ts + i * step
-                axis_labels.append(ts_to_axis_label(t_point, cfg["time_label"]))
-                tooltip_dates.append(ts_to_tooltip_date(t_point, cfg["time_label"]))
-                wave = 0.18 + 0.82 * math.sin(math.pi * i / max(1, n - 1))
-                values.append(int(max(1024 * 512, current_used_bytes * wave)))
-            total_period = current_used_bytes
+        for i in range(n):
+            t_curr = start_ts + i * step
+            axis_labels.append(ts_to_axis_label(t_curr, cfg["time_label"]))
+            tooltip_dates.append(ts_to_tooltip_date(t_curr, cfg["time_label"]))
+            
+            # بازه محاسبه مصرف این نقطه
+            t_prev = t_curr - step
+            p_rows = [r["used_bytes"] for r in rows if t_prev <= r["ts"] <= t_curr]
+            if len(p_rows) >= 2:
+                delta = max(0, p_rows[-1] - p_rows[0])
+            elif len(p_rows) == 1 and rows:
+                delta = max(0, p_rows[0] - rows[0]["used_bytes"])
+            else:
+                delta = 0
+            bucket_deltas.append(delta)
 
-        formatted_vals = [format_bytes(v) for v in values]
+        # اگر تاریخچه تازه ساخته شده باشد و هنوز دلتا ثبت نشده باشد، نقطه فعلی را قرار می‌دهد
+        if sum(bucket_deltas) == 0 and current_used_bytes > 0:
+            bucket_deltas[-1] = current_used_bytes
+
+        total_period = sum(bucket_deltas)
+        formatted_vals = [format_bytes(v) for v in bucket_deltas]
 
         result[key] = {
-            "x_labels": [axis_labels[len(axis_labels) // 2], axis_labels[-1]],
+            "x_labels": [axis_labels[0], axis_labels[len(axis_labels) // 2], axis_labels[-1]],
             "tooltip_dates": tooltip_dates,
-            "values": values,
+            "values": bucket_deltas,
             "formatted_values": formatted_vals,
             "total_str": format_bytes(total_period)
         }
@@ -216,15 +219,14 @@ def transform_config_name(original_name: str) -> tuple[str, str]:
     if not name:
         return "🌐", "Server"
 
-    # تشخیص کانفیگ VIP (معمولی یا یونیکد بولد 𝗩𝗜𝗣) و تبدیل به VIP خالی
+    # قانون ۱: نام کانفیگ VIP به VIP خالی تغییر کند
     if "VIP" in name.upper() or "𝗩𝗜𝗣" in name:
         return "👋", "VIP"
 
-    # تبدیل فقط کلمه "ویژه" به "Stable" با حفظ بقیه ساختار اسم اصلی
+    # قانون ۲: کلمه ویژه به Stable تغییر کند
     if "ویژه" in name:
         name = name.replace("ویژه", "Stable")
 
-    # استخراج ایموجی یا پرچم ابتدای نام برای نمایش زیبا در کارت
     icon = "🌐"
     known_icons = ["🇩🇪", "🇵🇱", "🇹🇷", "🇫🇷", "🇳🇱", "🇬🇧", "🇺🇸", "🇫🇮", "🇸🇪", "🇦🇪", "👋", "🔋", "⚠️", "⏰", "✨"]
     for em in known_icons:
@@ -300,7 +302,16 @@ async def fetch_upstream(token: str, upstream_url: str):
 def is_admin(request: Request) -> bool:
     return request.cookies.get(COOKIE_NAME) == ADMIN_PASSWORD
 
-# ----------------- رندرینگ صفحات HTML -----------------
+# تشخیص اینکه آیا درخواست از طرف نرم‌افزارهای کلاینت V2ray است یا مرورگر
+def is_v2ray_client(user_agent: str) -> bool:
+    ua = user_agent.lower()
+    client_signatures = [
+        "v2ray", "v2rayng", "v2rayn", "clash", "sing-box", "nekobox", 
+        "streisand", "shadowrocket", "stash", "quantumult", "surge", "loon"
+    ]
+    return any(sig in ua for sig in client_signatures)
+
+# ----------------- قالب‌های HTML -----------------
 def render_login_html(error: str = None) -> str:
     err_box = f'<div class="p-3 mb-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center">{error}</div>' if error else ""
     return f"""<!DOCTYPE html>
@@ -316,7 +327,7 @@ def render_login_html(error: str = None) -> str:
 <body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col justify-between p-4">
     <div></div>
     <div class="bg-slate-900 p-8 rounded-3xl border border-slate-800 w-full max-w-md mx-auto shadow-2xl">
-        <h2 class="text-xl font-bold mb-6 text-center">ورود به پنل مدیریت ساب‌اسکریپشن</h2>
+        <h2 class="text-xl font-bold mb-6 text-center">ورود به پنل مدیریت دیتاسنتر</h2>
         {err_box}
         <form action="/admin/login" method="post" class="space-y-4">
             <div>
@@ -361,7 +372,7 @@ def render_admin_html(profiles, domain: str) -> str:
         </tr>"""
 
     if not rows:
-        rows = '<tr><td colspan="5" class="p-8 text-center text-slate-500 text-xs">هنوز پروفایلی ساخته نشده است.</td></tr>'
+        rows = '<tr><td colspan="5" class="p-8 text-center text-slate-500 text-xs">هنوز سابی در دیتاسنتر ذخیره نشده است.</td></tr>'
 
     return f"""<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
@@ -377,17 +388,17 @@ def render_admin_html(profiles, domain: str) -> str:
     <div class="max-w-6xl w-full mx-auto space-y-8">
         <div class="flex flex-wrap justify-between items-center gap-4 bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-sm">
             <div>
-                <h1 class="text-2xl font-bold">کنترل پنل مدیریت ساب‌اسکریپشن</h1>
-                <p class="text-xs text-slate-400 mt-1">دامنه فعال: <span class="font-mono text-blue-400" dir="ltr">{domain}</span></p>
+                <h1 class="text-2xl font-bold">کنترل پنل دیتاسنتر ساب‌اسکریپشن</h1>
+                <p class="text-xs text-slate-400 mt-1">دامنه سرور: <span class="font-mono text-blue-400" dir="ltr">{domain}</span></p>
             </div>
             <a href="/admin/logout" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold transition-colors">خروج</a>
         </div>
 
         <div class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-sm">
-            <h2 class="text-base font-bold mb-4 flex items-center gap-2"><span>➕</span> تعریف پروفایل / مشتری جدید</h2>
+            <h2 class="text-base font-bold mb-4 flex items-center gap-2"><span>➕</span> ذخیره ساب جدید در دیتاسنتر</h2>
             <form action="/admin/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1.5">نام پروفایل (نمایش در بالای داشبورد)</label>
+                    <label class="block text-xs text-slate-400 mb-1.5">نام یا برند نمایشی</label>
                     <input type="text" name="name" placeholder="مثلاً: VIP" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500">
                 </div>
                 <div>
@@ -395,10 +406,10 @@ def render_admin_html(profiles, domain: str) -> str:
                     <input type="url" name="upstream_url" placeholder="https://seller.com/sub/..." required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 text-left font-mono" dir="ltr">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1.5">شناسه اختصاصی لینک (اختیاری)</label>
+                    <label class="block text-xs text-slate-400 mb-1.5">توکن شناسه اختصاصی (اختیاری)</label>
                     <div class="flex gap-2">
-                        <input type="text" name="custom_token" placeholder="خالی = تصادفی" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 text-left font-mono" dir="ltr">
-                        <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 font-bold rounded-xl text-sm shrink-0 transition-colors cursor-pointer">ثبت</button>
+                        <input type="text" name="custom_token" placeholder="خالی = رندوم" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 text-left font-mono" dir="ltr">
+                        <button type="submit" class="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 font-bold rounded-xl text-sm shrink-0 transition-colors cursor-pointer">ذخیره</button>
                     </div>
                 </div>
             </form>
@@ -406,15 +417,15 @@ def render_admin_html(profiles, domain: str) -> str:
 
         <div class="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden shadow-sm">
             <div class="p-6 border-b border-slate-800">
-                <h2 class="text-base font-bold">پروفایل‌های موجود ({len(profiles)})</h2>
+                <h2 class="text-base font-bold">ساب‌های ذخیره شده در دیتاسنتر ({len(profiles)})</h2>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-right text-sm">
                     <thead class="bg-slate-950/60 text-slate-400 text-xs border-b border-slate-800">
                         <tr>
-                            <th class="p-4 whitespace-nowrap">نام پروفایل</th>
-                            <th class="p-4 whitespace-nowrap">لینک داشبورد وب</th>
-                            <th class="p-4 whitespace-nowrap">لینک ساب کلاینت</th>
+                            <th class="p-4 whitespace-nowrap">نام ساب</th>
+                            <th class="p-4 whitespace-nowrap">داشبورد وب</th>
+                            <th class="p-4 whitespace-nowrap">لینک مستقیم v2ray</th>
                             <th class="p-4 whitespace-nowrap">وضعیت</th>
                             <th class="p-4 text-center whitespace-nowrap">عملیات</th>
                         </tr>
@@ -473,13 +484,13 @@ def render_dashboard_html(ctx: dict) -> str:
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="text-sm font-semibold mb-1">اعلان</div>
-                        <p class="text-xs sm:text-sm text-slate-600 dark:text-zinc-400">لطفا قبل از اتصال لینک ساب را آپدیت کنید</p>
+                        <p class="text-xs sm:text-sm text-slate-600 dark:text-zinc-400">لینک ساب را کپی کرده و مستقیماً داخل v2ray وارد کنید.</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- کارت وضعیت و ۳ کارت کناری -->
+        <!-- کارت وضعیت -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
             <div class="lg:col-span-2 relative p-6 sm:p-8 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg flex flex-col justify-between">
                 <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
@@ -528,7 +539,7 @@ def render_dashboard_html(ctx: dict) -> str:
 
             <div class="grid grid-cols-1 gap-4 sm:gap-6">
                 <div class="p-4 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm flex flex-col justify-center">
-                    <div class="text-sm text-slate-500 dark:text-zinc-400 mb-2">حجم کل</div>
+                    <div class="text-sm text-slate-500 dark:text-zinc-400 mb-2">حجم کل مصرفی</div>
                     <div dir="ltr" class="text-xl sm:text-3xl font-bold text-right">{ctx['used_traffic']}</div>
                 </div>
                 <div class="p-4 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm flex flex-col justify-center">
@@ -536,18 +547,18 @@ def render_dashboard_html(ctx: dict) -> str:
                     <div dir="ltr" class="text-base sm:text-lg font-semibold text-right">{ctx['expire_date']}</div>
                 </div>
                 <div class="p-4 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm flex flex-col justify-center">
-                    <div class="text-sm text-slate-500 dark:text-zinc-400 mb-2">آخرین اتصال</div>
+                    <div class="text-sm text-slate-500 dark:text-zinc-400 mb-2">آخرین بروزرسانی دیتاسنتر</div>
                     <div dir="ltr" class="flex items-center justify-end gap-2">
                         <span class="text-sm font-medium">{ctx['now_jalali']}</span>
-                        <span class="w-2.5 h-2.5 rounded-full bg-slate-400 dark:bg-zinc-500"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- بخش دو ستونی: لینک کانفیگ‌ها و نمودار آمار مصرف -->
+        <!-- بخش دو ستونی -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 w-full py-4">
-            <!-- ستون لینک کانفیگ‌ها -->
+            <!-- ستون کانفیگ‌ها -->
             <div class="order-2 lg:order-1 space-y-3">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg sm:text-xl font-bold flex items-center gap-2">
@@ -560,14 +571,13 @@ def render_dashboard_html(ctx: dict) -> str:
                 </div>
 
                 <div class="max-h-[400px] overflow-y-auto space-y-2">
-                    <!-- لینک اشتراک اصلی -->
                     <div class="group relative p-3 rounded-lg border-2 border-[#4b85d1]/40 bg-[#4b85d1]/10 hover:border-[#4b85d1]/70 transition-all duration-200">
                         <div class="flex items-center gap-2">
                             <div class="px-2 py-0.5 rounded text-xs font-semibold bg-[#4b85d1] text-white shrink-0">SUB</div>
                             <span class="text-sm">📱</span>
-                            <div class="text-sm sm:text-base font-medium flex-1 min-w-0 truncate">لینک اشتراک</div>
+                            <div class="text-sm sm:text-base font-medium flex-1 min-w-0 truncate">لینک اختصاصی ساب‌اسکریپشن</div>
                             <div class="flex gap-1 shrink-0">
-                                <button onclick="copySubUrl()" class="p-1.5 rounded transition-all cursor-pointer bg-slate-200/80 dark:bg-zinc-800 hover:bg-[#4b85d1] hover:text-white" title="کپی لینک">
+                                <button onclick="copySubUrl()" class="p-1.5 rounded transition-all cursor-pointer bg-slate-200/80 dark:bg-zinc-800 hover:bg-[#4b85d1] hover:text-white" title="کپی لینک ساب">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
                                 </button>
                                 <button onclick="showSubQR()" class="p-1.5 rounded bg-slate-200/80 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer" title="کد QR">
@@ -580,7 +590,7 @@ def render_dashboard_html(ctx: dict) -> str:
                 </div>
             </div>
 
-            <!-- ستون نمودار آمار مصرف با تولتیپ شناور نرم -->
+            <!-- ستون نمودار آمار مصرف واقعی -->
             <div class="order-1 lg:order-2">
                 <div class="bg-white dark:bg-[#161618] flex flex-col gap-6 rounded-xl border border-slate-200/80 dark:border-zinc-800/90 py-6 shadow-sm overflow-hidden">
                     <div class="px-6 flex flex-col gap-4 border-b border-slate-200/70 dark:border-zinc-800 pb-4">
@@ -609,7 +619,6 @@ def render_dashboard_html(ctx: dict) -> str:
                                         <stop offset="95%" stop-color="#4b85d1" stop-opacity="0.06"></stop>
                                     </linearGradient>
                                 </defs>
-                                <!-- خطوط افقی نقطه‌چین -->
                                 <g stroke="currentColor" class="text-slate-200 dark:text-zinc-800/80" stroke-dasharray="3 3" stroke-width="1">
                                     <line x1="0" y1="10" x2="558" y2="10"></line>
                                     <line x1="0" y1="62.5" x2="558" y2="62.5"></line>
@@ -617,21 +626,17 @@ def render_dashboard_html(ctx: dict) -> str:
                                     <line x1="0" y1="167.5" x2="558" y2="167.5"></line>
                                     <line x1="0" y1="220" x2="558" y2="220"></line>
                                 </g>
-                                <!-- منحنی و مساحت -->
                                 <path id="chartAreaPath" fill="url(#fillTraffic)" fill-opacity="0.6" d=""></path>
                                 <path id="chartLinePath" fill="none" stroke="#4b85d1" stroke-width="2" d=""></path>
+                                <circle id="hoverDot" cx="279" cy="115" r="4.5" fill="#4b85d1" stroke="#161618" stroke-width="2" class="opacity-0 transition-opacity duration-200 pointer-events-none"></circle>
 
-                                <!-- نقطه هاور روی نمودار -->
-                                <circle id="hoverDot" cx="279" cy="13.5" r="4.5" fill="#4b85d1" stroke="#161618" stroke-width="2" class="opacity-0 transition-opacity duration-200 pointer-events-none"></circle>
-
-                                <!-- برچسب‌های محور افقی -->
+                                <text id="xLabelStart" x="15" y="240" font-size="11" text-anchor="start" fill="currentColor" class="text-slate-400 dark:text-zinc-400"></text>
                                 <text id="xLabelMid" x="279" y="240" font-size="11" text-anchor="middle" fill="currentColor" class="text-slate-400 dark:text-zinc-400"></text>
-                                <text id="xLabelEnd" x="542" y="240" font-size="11" text-anchor="middle" fill="currentColor" class="text-slate-400 dark:text-zinc-400"></text>
+                                <text id="xLabelEnd" x="542" y="240" font-size="11" text-anchor="end" fill="currentColor" class="text-slate-400 dark:text-zinc-400"></text>
                             </svg>
 
-                            <!-- باکس تولتیپ شناور (Smooth Moving Tooltip) -->
                             <div id="chartTooltip" class="pointer-events-none absolute top-0 left-0 opacity-0 transition-opacity duration-200 z-20 bg-[#18181b]/95 dark:bg-[#121214]/95 text-white border border-zinc-700/70 rounded-xl px-4 py-2.5 shadow-2xl min-w-[145px]" style="will-change: transform;">
-                                <div id="tooltipDate" class="text-xs text-zinc-400 text-right mb-1 font-medium">۱۴۰۵/۰۷/۲۲</div>
+                                <div id="tooltipDate" class="text-xs text-zinc-400 text-right mb-1 font-medium">--</div>
                                 <div class="text-xs sm:text-sm font-bold text-right flex items-center justify-end gap-1.5 whitespace-nowrap">
                                     <span>مصرف کل:</span>
                                     <span id="tooltipValue" dir="ltr" class="font-mono">0.00 MB</span>
@@ -643,7 +648,7 @@ def render_dashboard_html(ctx: dict) -> str:
             </div>
         </div>
 
-        <!-- جداکننده اپلیکیشن‌ها -->
+        <!-- اپلیکیشن‌ها -->
         <div class="my-8 sm:my-12">
             <div class="flex items-center gap-4">
                 <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-300 dark:via-zinc-800 to-transparent"></div>
@@ -677,7 +682,6 @@ def render_dashboard_html(ctx: dict) -> str:
     <div class="fixed inset-0 bg-grid-pattern opacity-[0.02] pointer-events-none"></div>
 
     <div class="container mx-auto px-4 pt-12 pb-6 max-w-7xl relative z-10 flex-1">
-        <!-- هدر داشبورد -->
         <div class="flex sm:items-center sm:justify-between gap-4 mb-8 sm:mb-12">
             <div class="flex-1 min-w-0">
                 <h1 class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-2">داشبورد کاربری</h1>
@@ -685,9 +689,9 @@ def render_dashboard_html(ctx: dict) -> str:
                     <p dir="ltr" class="font-medium truncate">{ctx['brand_name']}</p>
                     <div class="flex items-center gap-1.5">
                         <div class="w-2.5 h-2.5 rounded-full bg-slate-400 dark:bg-zinc-500"></div>
-                        <span>آنلاین</span>
+                        <span>دیتاسنتر ابری</span>
                     </div>
-                    <button onclick="location.reload()" class="hover:text-[#4b85d1] transition-colors cursor-pointer" title="Refresh data">
+                    <button onclick="location.reload()" class="hover:text-[#4b85d1] transition-colors cursor-pointer" title="Refresh">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>
                     </button>
                 </div>
@@ -718,10 +722,8 @@ def render_dashboard_html(ctx: dict) -> str:
         </div>
     </div>
 
-    <!-- Toast Notification -->
     <div id="toastBox" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold shadow-xl"></div>
 
-    <!-- مودال نمایش QR Code -->
     <div id="qrModal" class="fixed inset-0 bg-black/60 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeQR()">
         <div class="bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-xl max-w-xs w-full flex flex-col items-center text-center border border-slate-100 dark:border-zinc-800" onclick="event.stopPropagation()">
             <h3 class="font-bold text-sm mb-4">اسکن کد QR</h3>
@@ -735,6 +737,7 @@ def render_dashboard_html(ctx: dict) -> str:
         const allConfigs = {ctx['configs_json']};
         const chartDatasets = {ctx['chart_json']};
         let activePeriod = "7d";
+        let curvePoints = [];
 
         function showToast(msg) {{
             const box = document.getElementById("toastBox");
@@ -745,7 +748,7 @@ def render_dashboard_html(ctx: dict) -> str:
 
         function copySubUrl() {{
             navigator.clipboard.writeText(subUrl);
-            showToast("لینک اشتراک کپی شد!");
+            showToast("لینک ساب کپی شد!");
         }}
         function copyConfig(idx) {{
             navigator.clipboard.writeText(allConfigs[idx]);
@@ -770,20 +773,16 @@ def render_dashboard_html(ctx: dict) -> str:
             document.getElementById("qrModal").classList.remove("flex");
         }}
 
-        // منحنی دقیق مشابه تصویر نمونه با 3 نقطه کلیدی (چپ، قله وسط، راست)
-        function evalArchCurve(t, yStart, yPeak, yEnd) {{
-            if (t <= 0.5) {{
-                const u = t * 2;
-                const ease = u * u * (3 - 2 * u);
-                return yStart + (yPeak - yStart) * ease;
-            }} else {{
-                const u = (t - 0.5) * 2;
-                const ease = u * u * (3 - 2 * u);
-                return yPeak + (yEnd - yPeak) * ease;
+        function buildSmoothPath(pts) {{
+            if (!pts || pts.length === 0) return "";
+            if (pts.length === 1) return `M ${{pts[0][0]}},${{pts[0][1]}}`;
+            let d = `M ${{pts[0][0]}},${{pts[0][1]}}`;
+            for (let i = 0; i < pts.length - 1; i++) {{
+                const xMid = (pts[i][0] + pts[i+1][0]) / 2;
+                d += ` C ${{xMid}},${{pts[i][1]}} ${{xMid}},${{pts[i+1][1]}} ${{pts[i+1][0]}},${{pts[i+1][1]}}`;
             }}
+            return d;
         }}
-
-        let currentCurveParams = {{ yStart: 185, yPeak: 14, yEnd: 195 }};
 
         function switchPeriod(periodKey) {{
             activePeriod = periodKey;
@@ -799,26 +798,54 @@ def render_dashboard_html(ctx: dict) -> str:
             }}
 
             document.getElementById("chartTotalBadge").textContent = data.total_str;
-            document.getElementById("xLabelMid").textContent = data.x_labels[0] || "";
-            document.getElementById("xLabelEnd").textContent = data.x_labels[1] || "";
+            document.getElementById("xLabelStart").textContent = data.x_labels[0] || "";
+            document.getElementById("xLabelMid").textContent = data.x_labels[1] || "";
+            document.getElementById("xLabelEnd").textContent = data.x_labels[2] || "";
 
-            const lineD = "M0,185 C93,99.25 186,14 279,14 C372,14 465,105 558,195";
-            const areaD = lineD + " L558,220 L0,220 Z";
+            const vals = data.values;
+            const maxVal = Math.max(...vals, 1);
+            const width = 558;
+            const topY = 16;
+            const bottomY = 220;
+            const usableH = bottomY - topY;
+
+            curvePoints = vals.map((v, idx) => {{
+                const x = (idx / Math.max(1, vals.length - 1)) * width;
+                const y = bottomY - (v / maxVal) * usableH;
+                return [x, y];
+            }});
+
+            const lineD = buildSmoothPath(curvePoints);
+            const areaD = lineD + ` L ${{width}},${{bottomY}} L 0,${{bottomY}} Z`;
 
             document.getElementById("chartLinePath").setAttribute("d", lineD);
             document.getElementById("chartAreaPath").setAttribute("d", areaD);
         }}
 
-        // انیمیشن Smooth Lerp برای تولتیپ و نقطه روی نمودار
+        // محاسبات انیمیشن Smooth حرکت تولتیپ روی نمودار بر اساس دیتای واقعی
         const container = document.getElementById("chartContainer");
         const tooltip = document.getElementById("chartTooltip");
         const hoverDot = document.getElementById("hoverDot");
         const tooltipDate = document.getElementById("tooltipDate");
         const tooltipValue = document.getElementById("tooltipValue");
 
-        let targetX = 279, targetY = 14;
-        let currentX = 279, currentY = 14;
+        let targetX = 279, targetY = 115;
+        let currentX = 279, currentY = 115;
         let isHovering = false;
+
+        function getYOnCurve(xVal) {{
+            if (!curvePoints || curvePoints.length === 0) return 115;
+            for (let i = 0; i < curvePoints.length - 1; i++) {{
+                if (xVal >= curvePoints[i][0] && xVal <= curvePoints[i+1][0]) {{
+                    const span = curvePoints[i+1][0] - curvePoints[i][0];
+                    const t = span === 0 ? 0 : (xVal - curvePoints[i][0]) / span;
+                    // Ease Hermite interpolation
+                    const ease = t * t * (3 - 2 * t);
+                    return curvePoints[i][1] + (curvePoints[i+1][1] - curvePoints[i][1]) * ease;
+                }}
+            }}
+            return curvePoints[curvePoints.length - 1][1];
+        }}
 
         function animateTooltip() {{
             if (isHovering && container && tooltip && hoverDot) {{
@@ -835,8 +862,8 @@ def render_dashboard_html(ctx: dict) -> str:
                 let pixelX = currentX * scaleX + 16;
                 let pixelY = currentY * scaleY + 18;
 
-                if (pixelX + 160 > rect.width) {{
-                    pixelX = currentX * scaleX - 165;
+                if (pixelX + 165 > rect.width) {{
+                    pixelX = currentX * scaleX - 170;
                 }}
                 if (pixelY + 70 > rect.height) {{
                     pixelY = currentY * scaleY - 68;
@@ -857,7 +884,7 @@ def render_dashboard_html(ctx: dict) -> str:
                 relX = Math.max(0, Math.min(1, relX));
 
                 targetX = relX * 558;
-                targetY = evalArchCurve(relX, currentCurveParams.yStart, currentCurveParams.yPeak, currentCurveParams.yEnd);
+                targetY = getYOnCurve(targetX);
 
                 const data = chartDatasets[activePeriod];
                 if (data && data.tooltip_dates.length > 0) {{
@@ -895,9 +922,21 @@ def render_dashboard_html(ctx: dict) -> str:
 
 # ----------------- مسیرها (Routes) -----------------
 @app.get("/")
-async def root():
-    return RedirectResponse(url="/admin")
+async def root(request: Request):
+    user_agent = request.headers.get("user-agent", "")
+    with get_db() as conn:
+        profile = conn.execute("SELECT * FROM profiles ORDER BY id DESC LIMIT 1").fetchone()
+    
+    if not profile:
+        return RedirectResponse(url="/admin")
+    
+    # اگر نرم‌افزار v2ray آدرس اصلی سایت را گرفت، خودکار ساب را تحویل بدهد
+    if is_v2ray_client(user_agent):
+        return await get_user_sub(profile["token"])
+        
+    return RedirectResponse(url=f"/d/{profile['token']}")
 
+# آدرس استاندارد ساب‌اسکریپشن برای کلاینت‌ها
 @app.get("/sub/{token}")
 async def get_user_sub(token: str):
     with get_db() as conn:
@@ -914,8 +953,10 @@ async def get_user_sub(token: str):
         _, encoded_sub = parse_and_modify_configs(raw_text)
         user_info = headers.get("subscription-userinfo", "")
         info = parse_user_info(user_info)
+        
+        # ثبت دیتای واقعی مصرف در دیتاسنتر
         if "upload" in info or "download" in info:
-            record_usage_snapshot(token, info.get("upload", 0) + info.get("download", 0))
+            record_real_usage(token, info.get("upload", 0) + info.get("download", 0))
     except Exception:
         return Response(content="", status_code=502)
 
@@ -928,8 +969,15 @@ async def get_user_sub(token: str):
         }
     )
 
+# آدرس داشبورد وب
 @app.get("/d/{token}", response_class=HTMLResponse)
 async def user_dashboard(request: Request, token: str):
+    user_agent = request.headers.get("user-agent", "")
+    
+    # اگر کاربر لینک داشبورد را در v2ray وارد کرد، به جای ارور کانفیگ‌ها را به نرم‌افزار بدهد
+    if is_v2ray_client(user_agent):
+        return await get_user_sub(token)
+
     with get_db() as conn:
         profile = conn.execute("SELECT * FROM profiles WHERE token = ?", (token,)).fetchone()
 
@@ -950,7 +998,7 @@ async def user_dashboard(request: Request, token: str):
             total_quota = info.get("total", 0)
             expire_ts = info.get("expire", 0)
             if upload + download > 0:
-                record_usage_snapshot(token, upload + download)
+                record_real_usage(token, upload + download)
         except Exception:
             pass
 
@@ -974,7 +1022,7 @@ async def user_dashboard(request: Request, token: str):
     clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
     sub_url = f"https://{clean_domain}/sub/{token}"
 
-    chart_datasets = build_chart_datasets(token, used_traffic)
+    chart_datasets = build_real_chart_datasets(token, used_traffic)
 
     ctx = {
         "brand_name": profile["name"],
