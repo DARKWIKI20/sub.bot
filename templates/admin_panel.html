@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مدیریت ساب‌ها</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
+    <style>body { font-family: Vazirmatn FD, sans-serif; }</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 sm:p-8">
+    <div class="max-w-6xl mx-auto space-y-8">
+        <!-- سربرگ -->
+        <div class="flex justify-between items-center bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-sm">
+            <div>
+                <h1 class="text-2xl font-bold">کنترل پنل مدیریت ساب‌اسکریپشن</h1>
+                <p class="text-xs text-slate-400 mt-1">دامنه: <span class="font-mono text-emerald-400">{{ domain }}</span></p>
+            </div>
+            <a href="/admin/logout" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold">خروج</a>
+        </div>
+
+        <!-- فرم افزودن پروفایل جدید -->
+        <div class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-sm">
+            <h2 class="text-base font-bold mb-4 flex items-center gap-2">
+                <span>➕</span> تعریف پروفایل / مشتری جدید
+            </h2>
+            <form action="/admin/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">نام یا برند اختصاصی</label>
+                    <input type="text" name="name" placeholder="مثلاً: Ali-VIP" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">لینک ساب اصلی فروشنده</label>
+                    <input type="url" name="upstream_url" placeholder="https://seller.com/sub/..." required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 text-left font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">شناسه اختصاصی (اختیاری)</label>
+                    <div class="flex gap-2">
+                        <input type="text" name="custom_token" placeholder="خالی = تصادفی" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 text-left font-mono">
+                        <button type="submit" class="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 font-bold rounded-xl text-sm shrink-0">ثبت</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <!-- جدول لیست پروفایل‌ها -->
+        <div class="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden shadow-sm">
+            <div class="p-6 border-b border-slate-800">
+                <h2 class="text-base font-bold">پروفایل‌های موجود ({{ profiles|length }})</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right text-sm">
+                    <thead class="bg-slate-950 text-slate-400 text-xs border-b border-slate-800">
+                        <tr>
+                            <th class="p-4">نام</th>
+                            <th class="p-4">لینک داشبورد کاربر</th>
+                            <th class="p-4">لینک ساب کلاینت</th>
+                            <th class="p-4">وضعیت</th>
+                            <th class="p-4 text-center">عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/60">
+                        {% for p in profiles %}
+                        <tr class="hover:bg-slate-800/30">
+                            <td class="p-4 font-bold">{{ p.name }}</td>
+                            <td class="p-4">
+                                <a href="/d/{{ p.token }}" target="_blank" class="text-emerald-400 hover:underline text-xs font-mono">/d/{{ p.token }}</a>
+                            </td>
+                            <td class="p-4">
+                                <span class="text-slate-400 text-xs font-mono select-all">https://{{ domain }}/sub/{{ p.token }}</span>
+                            </td>
+                            <td class="p-4">
+                                {% if p.is_blocked %}
+                                <span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">مسدود (بلاک)</span>
+                                {% else %}
+                                <span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">فعال</span>
+                                {% endif %}
+                            </td>
+                            <td class="p-4">
+                                <div class="flex justify-center items-center gap-2">
+                                    <form action="/admin/profiles/{{ p.token }}/toggle-block" method="post">
+                                        <button type="submit" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors {{ 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-400' if not p.is_blocked else 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400' }}">
+                                            {{ 'بلاک' if not p.is_blocked else 'رفع بلاک' }}
+                                        </button>
+                                    </form>
+                                    <form action="/admin/profiles/{{ p.token }}/delete" method="post" onsubmit="return confirm('آیا از حذف این پروفایل اطمینان دارید؟');">
+                                        <button type="submit" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors">
+                                            حذف
+                                        </button>
+                                    </form>
+                                </div>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" class="p-8 text-center text-slate-500 text-xs">هنوز پروفایلی ساخته نشده است.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
