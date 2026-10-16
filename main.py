@@ -43,39 +43,11 @@ def init_db():
                 created_at TEXT NOT NULL
             )
         """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS usage_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                token TEXT NOT NULL,
-                ts INTEGER NOT NULL,
-                used_bytes INTEGER NOT NULL
-            )
-        """)
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_token_ts ON usage_logs(token, ts)")
         conn.commit()
 
 init_db()
 
-def record_real_usage(token: str, used_bytes: int):
-    now = int(time.time())
-    with get_db() as conn:
-        last = conn.execute(
-            "SELECT used_bytes FROM usage_logs WHERE token = ? ORDER BY ts DESC LIMIT 1",
-            (token,)
-        ).fetchone()
-        
-        # تنها در صورتی که دیتای جدید باشد یا بازه زمانی گذشته باشد ثبت می‌شود
-        if not last or last["used_bytes"] != used_bytes:
-            conn.execute(
-                "INSERT INTO usage_logs (token, ts, used_bytes) VALUES (?, ?, ?)",
-                (token, now, used_bytes)
-            )
-            # نگهداری سوابق تا ۱۰۰ روز اخیر
-            cutoff = now - (100 * 86400)
-            conn.execute("DELETE FROM usage_logs WHERE ts < ?", (cutoff,))
-            conn.commit()
-
-# ----------------- چرخه حیات -----------------
+# ----------------- چرخه حیات و وب‌هوک -----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     if BOT_TOKEN and PUBLIC_URL != "localhost:8000":
@@ -90,7 +62,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-# ----------------- توابع کمکی تقویم و حجم -----------------
+# ----------------- توابع کمکی تاریخ و حجم -----------------
 JALALI_MONTHS = [
     "", "فروردین", "اردیبهشت", "خرداد", "تیر", "مرداد", "شهریور",
     "مهر", "آبان", "آذر", "دی", "بهمن", "اسفند"
@@ -118,20 +90,6 @@ def gregorian_to_jalali(gy, gm, gd):
     jd = 1 + ((days < 186) and (days % 31) or ((days - 186) % 30))
     return jy, jm, jd
 
-def ts_to_axis_label(ts: int, include_time: bool = False) -> str:
-    dt = datetime.fromtimestamp(ts)
-    _, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
-    if include_time:
-        return to_persian_num(dt.strftime("%H:%M"))
-    return to_persian_num(f"{jd} {JALALI_MONTHS[jm]}")
-
-def ts_to_tooltip_date(ts: int, include_time: bool = False) -> str:
-    dt = datetime.fromtimestamp(ts)
-    jy, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
-    if include_time:
-        return to_persian_num(f"{jy}/{jm:02d}/{jd:02d} {dt.strftime('%H:%M')}")
-    return to_persian_num(f"{jy}/{jm:02d}/{jd:02d}")
-
 def parse_user_info(header_val: str) -> dict:
     data = {}
     if not header_val:
@@ -149,66 +107,6 @@ def format_bytes(size_bytes: int) -> str:
     if size_bytes >= 1024 ** 3:
         return f"{size_bytes / (1024 ** 3):.2f} GB"
     return f"{size_bytes / (1024 ** 2):.2f} MB"
-
-# ----------------- تولید آمار مصرف واقعی -----------------
-def build_real_chart_datasets(token: str, current_used_bytes: int) -> dict:
-    now = int(time.time())
-    periods = {
-        "1h":  {"sec": 3600,       "points": 6, "time_label": True},
-        "12h": {"sec": 12 * 3600,  "points": 6, "time_label": True},
-        "24h": {"sec": 24 * 3600,  "points": 6, "time_label": True},
-        "7d":  {"sec": 7 * 86400,  "points": 7, "time_label": False},
-        "30d": {"sec": 30 * 86400, "points": 8, "time_label": False},
-        "90d": {"sec": 90 * 86400, "points": 8, "time_label": False},
-    }
-
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT ts, used_bytes FROM usage_logs WHERE token = ? ORDER BY ts ASC",
-            (token,)
-        ).fetchall()
-
-    result = {}
-    for key, cfg in periods.items():
-        start_ts = now - cfg["sec"]
-        n = cfg["points"]
-        step = cfg["sec"] // max(1, (n - 1))
-
-        axis_labels = []
-        tooltip_dates = []
-        bucket_deltas = []
-
-        for i in range(n):
-            t_curr = start_ts + i * step
-            axis_labels.append(ts_to_axis_label(t_curr, cfg["time_label"]))
-            tooltip_dates.append(ts_to_tooltip_date(t_curr, cfg["time_label"]))
-            
-            # بازه محاسبه مصرف این نقطه
-            t_prev = t_curr - step
-            p_rows = [r["used_bytes"] for r in rows if t_prev <= r["ts"] <= t_curr]
-            if len(p_rows) >= 2:
-                delta = max(0, p_rows[-1] - p_rows[0])
-            elif len(p_rows) == 1 and rows:
-                delta = max(0, p_rows[0] - rows[0]["used_bytes"])
-            else:
-                delta = 0
-            bucket_deltas.append(delta)
-
-        # اگر تاریخچه تازه ساخته شده باشد و هنوز دلتا ثبت نشده باشد، نقطه فعلی را قرار می‌دهد
-        if sum(bucket_deltas) == 0 and current_used_bytes > 0:
-            bucket_deltas[-1] = current_used_bytes
-
-        total_period = sum(bucket_deltas)
-        formatted_vals = [format_bytes(v) for v in bucket_deltas]
-
-        result[key] = {
-            "x_labels": [axis_labels[0], axis_labels[len(axis_labels) // 2], axis_labels[-1]],
-            "tooltip_dates": tooltip_dates,
-            "values": bucket_deltas,
-            "formatted_values": formatted_vals,
-            "total_str": format_bytes(total_period)
-        }
-    return result
 
 def fix_b64_padding(s: str) -> str:
     s = s.strip().replace("\r", "").replace("\n", "").replace(" ", "")
@@ -302,7 +200,6 @@ async def fetch_upstream(token: str, upstream_url: str):
 def is_admin(request: Request) -> bool:
     return request.cookies.get(COOKIE_NAME) == ADMIN_PASSWORD
 
-# تشخیص اینکه آیا درخواست از طرف نرم‌افزارهای کلاینت V2ray است یا مرورگر
 def is_v2ray_client(user_agent: str) -> bool:
     ua = user_agent.lower()
     client_signatures = [
@@ -484,13 +381,13 @@ def render_dashboard_html(ctx: dict) -> str:
                     </div>
                     <div class="flex-1 min-w-0">
                         <div class="text-sm font-semibold mb-1">اعلان</div>
-                        <p class="text-xs sm:text-sm text-slate-600 dark:text-zinc-400">لینک ساب را کپی کرده و مستقیماً داخل v2ray وارد کنید.</p>
+                        <p class="text-xs sm:text-sm text-slate-600 dark:text-zinc-400">لطفا قبل از اتصال لینک ساب را آپدیت کنید</p>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- کارت وضعیت -->
+        <!-- کارت وضعیت و اطلاعات مصرف -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-8">
             <div class="lg:col-span-2 relative p-6 sm:p-8 rounded-2xl sm:rounded-3xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-lg flex flex-col justify-between">
                 <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
@@ -539,7 +436,7 @@ def render_dashboard_html(ctx: dict) -> str:
 
             <div class="grid grid-cols-1 gap-4 sm:gap-6">
                 <div class="p-4 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm flex flex-col justify-center">
-                    <div class="text-sm text-slate-500 dark:text-zinc-400 mb-2">حجم کل مصرفی</div>
+                    <div class="text-sm text-slate-500 dark:text-zinc-400 mb-2">حجم کل</div>
                     <div dir="ltr" class="text-xl sm:text-3xl font-bold text-right">{ctx['used_traffic']}</div>
                 </div>
                 <div class="p-4 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm flex flex-col justify-center">
@@ -547,41 +444,41 @@ def render_dashboard_html(ctx: dict) -> str:
                     <div dir="ltr" class="text-base sm:text-lg font-semibold text-right">{ctx['expire_date']}</div>
                 </div>
                 <div class="p-4 sm:p-6 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm flex flex-col justify-center">
-                    <div class="text-sm text-slate-500 dark:text-zinc-400 mb-2">آخرین بروزرسانی دیتاسنتر</div>
+                    <div class="text-sm text-slate-500 dark:text-zinc-400 mb-2">آخرین اتصال</div>
                     <div dir="ltr" class="flex items-center justify-end gap-2">
                         <span class="text-sm font-medium">{ctx['now_jalali']}</span>
-                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-slate-400 dark:bg-zinc-500"></span>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- بخش دو ستونی -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8 w-full py-4">
-            <!-- ستون کانفیگ‌ها -->
-            <div class="order-2 lg:order-1 space-y-3">
+        <!-- لیست کانفیگ‌ها (به‌صورت عریض و مرتب در صفحه) -->
+        <div class="w-full py-2">
+            <div class="space-y-3">
                 <div class="flex items-center justify-between">
                     <h2 class="text-lg sm:text-xl font-bold flex items-center gap-2">
                         <span class="text-xl">🔗</span>لینک کانفیگ ها
                     </h2>
-                    <button onclick="copyAll()" class="group cursor-pointer flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg transition-all duration-200 hover:scale-105 active:scale-95 bg-[#4b85d1] text-white hover:opacity-90 shadow-sm">
+                    <button onclick="copyAll()" class="group cursor-pointer flex items-center gap-2 px-4 py-2 text-sm rounded-lg transition-all duration-200 hover:scale-105 active:scale-95 bg-[#4b85d1] text-white hover:opacity-90 shadow-sm">
                         <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2a2 2 0 0 1 1.414.586l4 4A2 2 0 0 1 21 8v7a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z"></path><path d="M15 2v4a2 2 0 0 0 2 2h4"></path><path d="M5 7a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h8a2 2 0 0 0 1.732-1"></path></svg>
                         <span>کپی همه کانفیگ‌ها</span>
                     </button>
                 </div>
 
-                <div class="max-h-[400px] overflow-y-auto space-y-2">
-                    <div class="group relative p-3 rounded-lg border-2 border-[#4b85d1]/40 bg-[#4b85d1]/10 hover:border-[#4b85d1]/70 transition-all duration-200">
+                <div class="max-h-[500px] overflow-y-auto space-y-2">
+                    <!-- لینک اشتراک اصلی -->
+                    <div class="group relative p-3.5 rounded-lg border-2 border-[#4b85d1]/40 bg-[#4b85d1]/10 hover:border-[#4b85d1]/70 transition-all duration-200">
                         <div class="flex items-center gap-2">
                             <div class="px-2 py-0.5 rounded text-xs font-semibold bg-[#4b85d1] text-white shrink-0">SUB</div>
                             <span class="text-sm">📱</span>
-                            <div class="text-sm sm:text-base font-medium flex-1 min-w-0 truncate">لینک اختصاصی ساب‌اسکریپشن</div>
-                            <div class="flex gap-1 shrink-0">
-                                <button onclick="copySubUrl()" class="p-1.5 rounded transition-all cursor-pointer bg-slate-200/80 dark:bg-zinc-800 hover:bg-[#4b85d1] hover:text-white" title="کپی لینک ساب">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
+                            <div class="text-sm sm:text-base font-medium flex-1 min-w-0 truncate">لینک اشتراک</div>
+                            <div class="flex gap-1.5 shrink-0">
+                                <button onclick="copySubUrl()" class="p-2 rounded-lg transition-all cursor-pointer bg-slate-200/80 dark:bg-zinc-800 hover:bg-[#4b85d1] hover:text-white" title="کپی لینک">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
                                 </button>
-                                <button onclick="showSubQR()" class="p-1.5 rounded bg-slate-200/80 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer" title="کد QR">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 12v4a1 1 0 0 1-1 1h-4"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M17 8V7"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M7 17h.01"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><rect x="7" y="7" width="5" height="5" rx="1"></rect></svg>
+                                <button onclick="showSubQR()" class="p-2 rounded-lg bg-slate-200/80 dark:bg-zinc-800 hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer" title="کد QR">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 12v4a1 1 0 0 1-1 1h-4"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M17 8V7"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M7 17h.01"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><rect x="7" y="7" width="5" height="5" rx="1"></rect></svg>
                                 </button>
                             </div>
                         </div>
@@ -589,66 +486,9 @@ def render_dashboard_html(ctx: dict) -> str:
                     {conf_items}
                 </div>
             </div>
-
-            <!-- ستون نمودار آمار مصرف واقعی -->
-            <div class="order-1 lg:order-2">
-                <div class="bg-white dark:bg-[#161618] flex flex-col gap-6 rounded-xl border border-slate-200/80 dark:border-zinc-800/90 py-6 shadow-sm overflow-hidden">
-                    <div class="px-6 flex flex-col gap-4 border-b border-slate-200/70 dark:border-zinc-800 pb-4">
-                        <div class="flex flex-wrap items-center justify-between w-full">
-                            <div class="text-lg sm:text-xl font-bold">آمار مصرف</div>
-                            <div class="flex items-center gap-2 text-sm font-semibold text-[#4b85d1]">
-                                <span id="chartTotalBadge" dir="ltr" class="font-semibold">{ctx['used_traffic']}</span>
-                            </div>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            <button onclick="switchPeriod('1h')" id="tab-1h" class="period-btn px-3 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer bg-slate-100 dark:bg-zinc-800/90 text-slate-500 dark:text-zinc-400">۱ ساعت</button>
-                            <button onclick="switchPeriod('12h')" id="tab-12h" class="period-btn px-3 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer bg-slate-100 dark:bg-zinc-800/90 text-slate-500 dark:text-zinc-400">۱۲ ساعت</button>
-                            <button onclick="switchPeriod('24h')" id="tab-24h" class="period-btn px-3 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer bg-slate-100 dark:bg-zinc-800/90 text-slate-500 dark:text-zinc-400">۲۴ ساعت</button>
-                            <button onclick="switchPeriod('7d')" id="tab-7d" class="period-btn px-3 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer bg-[#4b85d1] text-white shadow-sm">۷ روز</button>
-                            <button onclick="switchPeriod('30d')" id="tab-30d" class="period-btn px-3 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer bg-slate-100 dark:bg-zinc-800/90 text-slate-500 dark:text-zinc-400">۳۰ روز</button>
-                            <button onclick="switchPeriod('90d')" id="tab-90d" class="period-btn px-3 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer bg-slate-100 dark:bg-zinc-800/90 text-slate-500 dark:text-zinc-400">۹۰ روز</button>
-                        </div>
-                    </div>
-
-                    <div class="px-2 sm:px-6 pt-2">
-                        <div id="chartContainer" class="relative h-[250px] w-full select-none cursor-crosshair">
-                            <svg id="usageSvg" viewBox="0 0 558 250" class="w-full h-full overflow-visible">
-                                <defs>
-                                    <linearGradient id="fillTraffic" x1="0" y1="0" x2="0" y2="1">
-                                        <stop offset="5%" stop-color="#4b85d1" stop-opacity="0.75"></stop>
-                                        <stop offset="95%" stop-color="#4b85d1" stop-opacity="0.06"></stop>
-                                    </linearGradient>
-                                </defs>
-                                <g stroke="currentColor" class="text-slate-200 dark:text-zinc-800/80" stroke-dasharray="3 3" stroke-width="1">
-                                    <line x1="0" y1="10" x2="558" y2="10"></line>
-                                    <line x1="0" y1="62.5" x2="558" y2="62.5"></line>
-                                    <line x1="0" y1="115" x2="558" y2="115"></line>
-                                    <line x1="0" y1="167.5" x2="558" y2="167.5"></line>
-                                    <line x1="0" y1="220" x2="558" y2="220"></line>
-                                </g>
-                                <path id="chartAreaPath" fill="url(#fillTraffic)" fill-opacity="0.6" d=""></path>
-                                <path id="chartLinePath" fill="none" stroke="#4b85d1" stroke-width="2" d=""></path>
-                                <circle id="hoverDot" cx="279" cy="115" r="4.5" fill="#4b85d1" stroke="#161618" stroke-width="2" class="opacity-0 transition-opacity duration-200 pointer-events-none"></circle>
-
-                                <text id="xLabelStart" x="15" y="240" font-size="11" text-anchor="start" fill="currentColor" class="text-slate-400 dark:text-zinc-400"></text>
-                                <text id="xLabelMid" x="279" y="240" font-size="11" text-anchor="middle" fill="currentColor" class="text-slate-400 dark:text-zinc-400"></text>
-                                <text id="xLabelEnd" x="542" y="240" font-size="11" text-anchor="end" fill="currentColor" class="text-slate-400 dark:text-zinc-400"></text>
-                            </svg>
-
-                            <div id="chartTooltip" class="pointer-events-none absolute top-0 left-0 opacity-0 transition-opacity duration-200 z-20 bg-[#18181b]/95 dark:bg-[#121214]/95 text-white border border-zinc-700/70 rounded-xl px-4 py-2.5 shadow-2xl min-w-[145px]" style="will-change: transform;">
-                                <div id="tooltipDate" class="text-xs text-zinc-400 text-right mb-1 font-medium">--</div>
-                                <div class="text-xs sm:text-sm font-bold text-right flex items-center justify-end gap-1.5 whitespace-nowrap">
-                                    <span>مصرف کل:</span>
-                                    <span id="tooltipValue" dir="ltr" class="font-mono">0.00 MB</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
         </div>
 
-        <!-- اپلیکیشن‌ها -->
+        <!-- جداکننده اپلیکیشن‌ها -->
         <div class="my-8 sm:my-12">
             <div class="flex items-center gap-4">
                 <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-300 dark:via-zinc-800 to-transparent"></div>
@@ -682,6 +522,7 @@ def render_dashboard_html(ctx: dict) -> str:
     <div class="fixed inset-0 bg-grid-pattern opacity-[0.02] pointer-events-none"></div>
 
     <div class="container mx-auto px-4 pt-12 pb-6 max-w-7xl relative z-10 flex-1">
+        <!-- هدر داشبورد -->
         <div class="flex sm:items-center sm:justify-between gap-4 mb-8 sm:mb-12">
             <div class="flex-1 min-w-0">
                 <h1 class="text-3xl sm:text-4xl lg:text-5xl font-bold mb-2">داشبورد کاربری</h1>
@@ -706,7 +547,7 @@ def render_dashboard_html(ctx: dict) -> str:
         {main_section}
     </div>
 
-    <!-- فوتر -->
+    <!-- فوتر با ذکر منبع رسمی -->
     <div dir="ltr" class="relative w-full pb-8 pt-6 px-6 z-10">
         <div class="container mx-auto max-w-7xl flex justify-center">
             <div class="flex flex-col items-center gap-3">
@@ -735,9 +576,6 @@ def render_dashboard_html(ctx: dict) -> str:
     <script>
         const subUrl = {json.dumps(ctx['sub_url'])};
         const allConfigs = {ctx['configs_json']};
-        const chartDatasets = {ctx['chart_json']};
-        let activePeriod = "7d";
-        let curvePoints = [];
 
         function showToast(msg) {{
             const box = document.getElementById("toastBox");
@@ -771,150 +609,6 @@ def render_dashboard_html(ctx: dict) -> str:
         function closeQR() {{
             document.getElementById("qrModal").classList.add("hidden");
             document.getElementById("qrModal").classList.remove("flex");
-        }}
-
-        function buildSmoothPath(pts) {{
-            if (!pts || pts.length === 0) return "";
-            if (pts.length === 1) return `M ${{pts[0][0]}},${{pts[0][1]}}`;
-            let d = `M ${{pts[0][0]}},${{pts[0][1]}}`;
-            for (let i = 0; i < pts.length - 1; i++) {{
-                const xMid = (pts[i][0] + pts[i+1][0]) / 2;
-                d += ` C ${{xMid}},${{pts[i][1]}} ${{xMid}},${{pts[i+1][1]}} ${{pts[i+1][0]}},${{pts[i+1][1]}}`;
-            }}
-            return d;
-        }}
-
-        function switchPeriod(periodKey) {{
-            activePeriod = periodKey;
-            const data = chartDatasets[periodKey];
-            if (!data) return;
-
-            document.querySelectorAll(".period-btn").forEach(btn => {{
-                btn.className = "period-btn px-3 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer bg-slate-100 dark:bg-zinc-800/90 text-slate-500 dark:text-zinc-400";
-            }});
-            const activeBtn = document.getElementById("tab-" + periodKey);
-            if (activeBtn) {{
-                activeBtn.className = "period-btn px-3 py-1.5 text-sm font-medium rounded-lg transition-all cursor-pointer bg-[#4b85d1] text-white shadow-sm";
-            }}
-
-            document.getElementById("chartTotalBadge").textContent = data.total_str;
-            document.getElementById("xLabelStart").textContent = data.x_labels[0] || "";
-            document.getElementById("xLabelMid").textContent = data.x_labels[1] || "";
-            document.getElementById("xLabelEnd").textContent = data.x_labels[2] || "";
-
-            const vals = data.values;
-            const maxVal = Math.max(...vals, 1);
-            const width = 558;
-            const topY = 16;
-            const bottomY = 220;
-            const usableH = bottomY - topY;
-
-            curvePoints = vals.map((v, idx) => {{
-                const x = (idx / Math.max(1, vals.length - 1)) * width;
-                const y = bottomY - (v / maxVal) * usableH;
-                return [x, y];
-            }});
-
-            const lineD = buildSmoothPath(curvePoints);
-            const areaD = lineD + ` L ${{width}},${{bottomY}} L 0,${{bottomY}} Z`;
-
-            document.getElementById("chartLinePath").setAttribute("d", lineD);
-            document.getElementById("chartAreaPath").setAttribute("d", areaD);
-        }}
-
-        // محاسبات انیمیشن Smooth حرکت تولتیپ روی نمودار بر اساس دیتای واقعی
-        const container = document.getElementById("chartContainer");
-        const tooltip = document.getElementById("chartTooltip");
-        const hoverDot = document.getElementById("hoverDot");
-        const tooltipDate = document.getElementById("tooltipDate");
-        const tooltipValue = document.getElementById("tooltipValue");
-
-        let targetX = 279, targetY = 115;
-        let currentX = 279, currentY = 115;
-        let isHovering = false;
-
-        function getYOnCurve(xVal) {{
-            if (!curvePoints || curvePoints.length === 0) return 115;
-            for (let i = 0; i < curvePoints.length - 1; i++) {{
-                if (xVal >= curvePoints[i][0] && xVal <= curvePoints[i+1][0]) {{
-                    const span = curvePoints[i+1][0] - curvePoints[i][0];
-                    const t = span === 0 ? 0 : (xVal - curvePoints[i][0]) / span;
-                    // Ease Hermite interpolation
-                    const ease = t * t * (3 - 2 * t);
-                    return curvePoints[i][1] + (curvePoints[i+1][1] - curvePoints[i][1]) * ease;
-                }}
-            }}
-            return curvePoints[curvePoints.length - 1][1];
-        }}
-
-        function animateTooltip() {{
-            if (isHovering && container && tooltip && hoverDot) {{
-                currentX += (targetX - currentX) * 0.18;
-                currentY += (targetY - currentY) * 0.18;
-
-                hoverDot.setAttribute("cx", currentX.toFixed(1));
-                hoverDot.setAttribute("cy", currentY.toFixed(1));
-
-                const rect = container.getBoundingClientRect();
-                const scaleX = rect.width / 558;
-                const scaleY = rect.height / 250;
-
-                let pixelX = currentX * scaleX + 16;
-                let pixelY = currentY * scaleY + 18;
-
-                if (pixelX + 165 > rect.width) {{
-                    pixelX = currentX * scaleX - 170;
-                }}
-                if (pixelY + 70 > rect.height) {{
-                    pixelY = currentY * scaleY - 68;
-                }}
-
-                tooltip.style.transform = `translate3d(${{pixelX.toFixed(1)}}px, ${{pixelY.toFixed(1)}}px, 0)`;
-            }}
-            requestAnimationFrame(animateTooltip);
-        }}
-
-        if (container) {{
-            switchPeriod("7d");
-            requestAnimationFrame(animateTooltip);
-
-            const handleMove = (clientX) => {{
-                const rect = container.getBoundingClientRect();
-                let relX = (clientX - rect.left) / rect.width;
-                relX = Math.max(0, Math.min(1, relX));
-
-                targetX = relX * 558;
-                targetY = getYOnCurve(targetX);
-
-                const data = chartDatasets[activePeriod];
-                if (data && data.tooltip_dates.length > 0) {{
-                    const idx = Math.min(data.tooltip_dates.length - 1, Math.floor(relX * data.tooltip_dates.length));
-                    tooltipDate.textContent = data.tooltip_dates[idx];
-                    tooltipValue.textContent = data.formatted_values[idx];
-                }}
-
-                if (!isHovering) {{
-                    isHovering = true;
-                    currentX = targetX;
-                    currentY = targetY;
-                    tooltip.classList.remove("opacity-0");
-                    tooltip.classList.add("opacity-100");
-                    hoverDot.classList.remove("opacity-0");
-                    hoverDot.classList.add("opacity-100");
-                }}
-            }};
-
-            container.addEventListener("mousemove", (e) => handleMove(e.clientX));
-            container.addEventListener("touchmove", (e) => {{
-                if (e.touches.length > 0) handleMove(e.touches[0].clientX);
-            }});
-            container.addEventListener("mouseleave", () => {{
-                isHovering = false;
-                tooltip.classList.remove("opacity-100");
-                tooltip.classList.add("opacity-0");
-                hoverDot.classList.remove("opacity-100");
-                hoverDot.classList.add("opacity-0");
-            }});
         }}
     </script>
 </body>
@@ -952,11 +646,6 @@ async def get_user_sub(token: str):
         raw_text, headers = await fetch_upstream(token, profile["upstream_url"])
         _, encoded_sub = parse_and_modify_configs(raw_text)
         user_info = headers.get("subscription-userinfo", "")
-        info = parse_user_info(user_info)
-        
-        # ثبت دیتای واقعی مصرف در دیتاسنتر
-        if "upload" in info or "download" in info:
-            record_real_usage(token, info.get("upload", 0) + info.get("download", 0))
     except Exception:
         return Response(content="", status_code=502)
 
@@ -974,7 +663,7 @@ async def get_user_sub(token: str):
 async def user_dashboard(request: Request, token: str):
     user_agent = request.headers.get("user-agent", "")
     
-    # اگر کاربر لینک داشبورد را در v2ray وارد کرد، به جای ارور کانفیگ‌ها را به نرم‌افزار بدهد
+    # اگر کاربر به اشتباه لینک داشبورد وب را داخل v2ray وارد کرد، به جای ارور کانفیگ‌ها را تحویل می‌دهد
     if is_v2ray_client(user_agent):
         return await get_user_sub(token)
 
@@ -997,8 +686,6 @@ async def user_dashboard(request: Request, token: str):
             download = info.get("download", 0)
             total_quota = info.get("total", 0)
             expire_ts = info.get("expire", 0)
-            if upload + download > 0:
-                record_real_usage(token, upload + download)
         except Exception:
             pass
 
@@ -1022,8 +709,6 @@ async def user_dashboard(request: Request, token: str):
     clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
     sub_url = f"https://{clean_domain}/sub/{token}"
 
-    chart_datasets = build_real_chart_datasets(token, used_traffic)
-
     ctx = {
         "brand_name": profile["name"],
         "is_blocked": is_blocked,
@@ -1037,8 +722,7 @@ async def user_dashboard(request: Request, token: str):
         "now_jalali": now_jalali,
         "sub_url": sub_url,
         "configs": configs,
-        "configs_json": json.dumps([c["link"] for c in configs]),
-        "chart_json": json.dumps(chart_datasets)
+        "configs_json": json.dumps([c["link"] for c in configs])
     }
     return HTMLResponse(content=render_dashboard_html(ctx))
 
@@ -1117,7 +801,6 @@ async def delete_profile(request: Request, token: str):
 
     with get_db() as conn:
         conn.execute("DELETE FROM profiles WHERE token = ?", (token,))
-        conn.execute("DELETE FROM usage_logs WHERE token = ?", (token,))
         conn.commit()
 
     sub_cache.pop(token, None)
@@ -1145,7 +828,7 @@ async def telegram_webhook(req: Request):
             profile = conn.execute("SELECT * FROM profiles ORDER BY id DESC LIMIT 1").fetchone()
 
         if not profile:
-            caption = "هیچ پروفایلی در سیستم ثبت نشده است.\n\nPowered by @DARK_WIKI"
+            caption = "هیچ پروفایلی در دیتاسنتر ثبت نشده است.\n\nPowered by @DARK_WIKI"
         else:
             try:
                 raw_text, headers = await fetch_upstream(profile["token"], profile["upstream_url"])
@@ -1166,7 +849,7 @@ async def telegram_webhook(req: Request):
                 f"📉 Used: `{used_gb:.2f}` GB\n"
                 f"📈 Remaining: `{remaining_gb:.2f}` GB\n\n"
                 f"🌐 داشبورد وب:\n{dash_link}\n\n"
-                f"🔗 لینک ساب:\n`{sub_link}`\n\n"
+                f"🔗 لینک ساب v2ray:\n`{sub_link}`\n\n"
                 f"⚡ Powered by @DARK_WIKI"
             )
 
