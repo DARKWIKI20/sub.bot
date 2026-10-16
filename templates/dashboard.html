@@ -46,6 +46,13 @@
             </div>
         </div>
 
+        {% if is_blocked %}
+        <div class="p-8 rounded-3xl border border-rose-500/30 bg-rose-500/5 mb-8 text-center">
+            <div class="text-3xl font-bold text-rose-500 mb-2">اشتراک مسدود شده است</div>
+            <p class="text-sm text-slate-500 dark:text-zinc-400">دسترسی این اشتراک توسط مدیر سرور به حالت تعلیق درآمده است.</p>
+        </div>
+        {% else %}
+
         <!-- اعلان -->
         <div class="p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 mb-8 flex items-start gap-3">
             <span class="text-emerald-500 text-lg">🔔</span>
@@ -57,7 +64,6 @@
 
         <!-- بخش کارت‌های اصلی -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
-            <!-- کارت وضعیت و گیج مصرف -->
             <div class="lg:col-span-2 p-6 lg:p-8 rounded-3xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm flex flex-col justify-between">
                 <div class="flex justify-between items-start mb-6">
                     <div class="flex items-center gap-2">
@@ -71,7 +77,6 @@
                 </div>
 
                 <div class="flex flex-col sm:flex-row items-center gap-8">
-                    <!-- گیج دایره‌ای -->
                     <div class="relative w-36 h-36 shrink-0">
                         <svg class="w-full h-full -rotate-90">
                             <circle cx="50%" cy="50%" r="45%" stroke="currentColor" stroke-width="10" fill="none" class="text-slate-100 dark:text-zinc-800" />
@@ -85,7 +90,6 @@
                         </div>
                     </div>
 
-                    <!-- ردیف‌های حجم -->
                     <div class="flex-1 w-full space-y-4">
                         <div class="flex justify-between items-center text-sm border-b border-slate-100 dark:border-zinc-800 pb-2">
                             <span class="text-slate-500 dark:text-zinc-400">حجم سرویس</span>
@@ -103,7 +107,6 @@
                 </div>
             </div>
 
-            <!-- کارت‌های کوچک کناری -->
             <div class="grid grid-cols-1 gap-4">
                 <div class="p-5 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
                     <span class="text-xs text-slate-400 block mb-1">حجم کل مصرفی</span>
@@ -134,7 +137,6 @@
             </div>
 
             <div class="space-y-3">
-                <!-- لینک ساب اصلی -->
                 <div class="p-3.5 rounded-xl border-2 border-emerald-500/30 bg-emerald-500/5 flex items-center justify-between gap-3">
                     <div class="flex items-center gap-2.5 min-w-0">
                         <span class="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-500 text-white">SUB</span>
@@ -146,7 +148,6 @@
                     </div>
                 </div>
 
-                <!-- تک تک کانفیگ‌ها -->
                 {% for conf in configs %}
                 <div class="p-3.5 rounded-xl border border-slate-100 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 flex items-center justify-between gap-3 transition-colors">
                     <div class="flex items-center gap-2.5 min-w-0">
@@ -161,9 +162,9 @@
                 {% endfor %}
             </div>
         </div>
+        {% endif %}
     </div>
 
-    <!-- مودال نمایش QR Code -->
     <div id="qrModal" class="fixed inset-0 bg-black/60 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeQR()">
         <div class="bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-xl max-w-xs w-full flex flex-col items-center text-center" onclick="event.stopPropagation()">
             <h3 class="font-bold text-sm mb-4">اسکن کد QR</h3>
