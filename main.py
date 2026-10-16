@@ -170,7 +170,7 @@ async def fetch_upstream(token: str, upstream_url: str):
 def is_admin(request: Request) -> bool:
     return request.cookies.get(COOKIE_NAME) == ADMIN_PASSWORD
 
-# ----------------- رندرینگ قالب‌های HTML -----------------
+# ----------------- رندرینگ صفحات HTML -----------------
 def render_login_html(error: str = None) -> str:
     err_box = f'<div class="p-3 mb-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center">{error}</div>' if error else ""
     return f"""<!DOCTYPE html>
@@ -670,4 +670,38 @@ async def telegram_webhook(req: Request):
     text = message.get("text", "")
 
     if text.startswith(("/start", "/stats")):
-        with get
+        with get_db() as conn:
+            profile = conn.execute("SELECT * FROM profiles ORDER BY id DESC LIMIT 1").fetchone()
+
+        if not profile:
+            caption = "هیچ پروفایلی در سیستم ثبت نشده است."
+        else:
+            try:
+                raw_text, headers = await fetch_upstream(profile["token"], profile["upstream_url"])
+                info = parse_user_info(headers.get("subscription-userinfo", ""))
+                used_gb = (info.get("upload", 0) + info.get("download", 0)) / (1024**3)
+                total_gb = info.get("total", 0) / (1024**3)
+                remaining_gb = max(0.0, total_gb - used_gb)
+            except Exception:
+                used_gb = total_gb = remaining_gb = 0.0
+
+            clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
+            sub_link = f"https://{clean_domain}/sub/{profile['token']}"
+            dash_link = f"https://{clean_domain}/d/{profile['token']}"
+
+            caption = (
+                f"🏷 Brand: {profile['name']}\n"
+                f"📊 Total: `{total_gb:.2f}` GB\n"
+                f"📉 Used: `{used_gb:.2f}` GB\n"
+                f"📈 Remaining: `{remaining_gb:.2f}` GB\n\n"
+                f"🌐 داشبورد وب:\n{dash_link}\n\n"
+                f"🔗 لینک ساب:\n`{sub_link}`"
+            )
+
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{TELEGRAM_API}/sendMessage",
+                json={"chat_id": chat_id, "text": caption, "parse_mode": "Markdown"}
+            )
+
+    return Response(status_code=200)
