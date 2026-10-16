@@ -6,10 +6,10 @@ import sqlite3
 import secrets
 import urllib.parse
 from datetime import datetime
+from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import Response, HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
 
 BRAND_DEFAULT = os.getenv("BRAND_NAME", "VIP-NET")
 PUBLIC_URL = os.getenv("RAILWAY_PUBLIC_DOMAIN", "localhost:8000")
@@ -21,12 +21,10 @@ DB_FILE = os.path.join(DATA_DIR, "usage_history.db")
 COOKIE_NAME = "admin_session"
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-app = FastAPI()
-templates = Jinja2Templates(directory="templates")
-
 CACHE_TTL = 120
 sub_cache = {}
 
+# ----------------- پایگاه داده -----------------
 def get_db():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
@@ -56,6 +54,22 @@ def init_db():
 
 init_db()
 
+# ----------------- چرخه حیات و وب‌هوک -----------------
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    if BOT_TOKEN and PUBLIC_URL != "localhost:8000":
+        clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
+        webhook_url = f"https://{clean_domain}/webhook"
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                await client.post(f"{TELEGRAM_API}/setWebhook", json={"url": webhook_url})
+        except Exception:
+            pass
+    yield
+
+app = FastAPI(lifespan=lifespan)
+
+# ----------------- توابع کمکی -----------------
 def gregorian_to_jalali(gy, gm, gd):
     g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
     jy = 0 if gy <= 1600 else 979
@@ -79,9 +93,9 @@ def parse_user_info(header_val: str) -> dict:
         return data
     for item in header_val.split(";"):
         if "=" in item:
-            k, v = item.strip().split("=")
+            k, v = item.strip().split("=", 1)
             try:
-                data[k] = int(v)
+                data[k.strip()] = int(float(v.strip()))
             except ValueError:
                 pass
     return data
@@ -91,12 +105,20 @@ def format_bytes(size_bytes: int) -> str:
         return f"{size_bytes / (1024 ** 3):.2f} GB"
     return f"{size_bytes / (1024 ** 2):.2f} MB"
 
-def parse_and_modify_configs(raw_b64: str, brand_name: str):
-    try:
-        decoded = base64.b64decode(raw_b64).decode("utf-8", errors="ignore")
-    except Exception:
-        return [], ""
-    
+def fix_b64_padding(s: str) -> str:
+    s = s.strip().replace("\r", "").replace("\n", "").replace(" ", "")
+    return s + "=" * ((4 - len(s) % 4) % 4)
+
+def parse_and_modify_configs(raw_text: str, brand_name: str):
+    raw_text = raw_text.strip()
+    if any(raw_text.startswith(p) for p in ("vless://", "vmess://", "trojan://", "ss://", "hysteria2://", "hy2://", "tuic://")):
+        decoded = raw_text
+    else:
+        try:
+            decoded = base64.b64decode(fix_b64_padding(raw_text)).decode("utf-8", errors="ignore")
+        except Exception:
+            decoded = raw_text
+
     lines = [l.strip() for l in decoded.splitlines() if l.strip()]
     configs = []
     modified_raw_lines = []
@@ -104,15 +126,16 @@ def parse_and_modify_configs(raw_b64: str, brand_name: str):
     for idx, line in enumerate(lines, start=1):
         custom_name = f"{brand_name} - {idx:02d}"
         proto = line.split("://")[0].lower() if "://" in line else "vpn"
-        
-        if line.startswith(("vless://", "trojan://", "ss://")):
+
+        if line.startswith(("vless://", "trojan://", "ss://", "hysteria2://", "hy2://", "tuic://")):
             base_part = line.split("#")[0]
             new_link = f"{base_part}#{urllib.parse.quote(custom_name)}"
             configs.append({"proto": proto, "name": custom_name, "link": new_link})
             modified_raw_lines.append(new_link)
         elif line.startswith("vmess://"):
             try:
-                conf = json.loads(base64.b64decode(line[8:]).decode("utf-8"))
+                b64_part = fix_b64_padding(line[8:])
+                conf = json.loads(base64.b64decode(b64_part).decode("utf-8", errors="ignore"))
                 conf["ps"] = custom_name
                 re_encoded = base64.b64encode(json.dumps(conf).encode("utf-8")).decode("utf-8")
                 new_link = f"vmess://{re_encoded}"
@@ -133,27 +156,334 @@ async def fetch_upstream(token: str, upstream_url: str):
     if token in sub_cache and (now - sub_cache[token]["timestamp"] < CACHE_TTL):
         return sub_cache[token]["text"], sub_cache[token]["headers"]
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        res = await client.get(upstream_url)
+    headers_req = {"User-Agent": "v2rayNG/1.8.12"}
+    async with httpx.AsyncClient(timeout=12.0, follow_redirects=True, verify=False) as client:
+        res = await client.get(upstream_url, headers=headers_req)
+        resp_headers = {k.lower(): v for k, v in res.headers.items()}
         sub_cache[token] = {
             "text": res.text.strip(),
-            "headers": dict(res.headers),
+            "headers": resp_headers,
             "timestamp": now
         }
         return sub_cache[token]["text"], sub_cache[token]["headers"]
 
 def is_admin(request: Request) -> bool:
-    session = request.cookies.get(COOKIE_NAME)
-    return session == ADMIN_PASSWORD
+    return request.cookies.get(COOKIE_NAME) == ADMIN_PASSWORD
 
-@app.on_event("startup")
-async def setup_webhook():
-    if BOT_TOKEN and PUBLIC_URL != "localhost:8000":
-        clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "")
-        webhook_url = f"https://{clean_domain}/webhook"
-        async with httpx.AsyncClient() as client:
-            await client.post(f"{TELEGRAM_API}/setWebhook", json={"url": webhook_url})
+# ----------------- رندرینگ قالب‌های HTML -----------------
+def render_login_html(error: str = None) -> str:
+    err_box = f'<div class="p-3 mb-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs text-center">{error}</div>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ورود به پنل مدیریت</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
+    <style>body {{ font-family: Vazirmatn FD, sans-serif; }}</style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-slate-800 p-8 rounded-3xl border border-slate-700 w-full max-w-md shadow-2xl">
+        <h2 class="text-xl font-bold mb-6 text-center">ورود به پنل مدیریت ساب‌اسکریپشن</h2>
+        {err_box}
+        <form action="/admin/login" method="post" class="space-y-4">
+            <div>
+                <label class="block text-xs text-slate-400 mb-2">رمز عبور امنیتی پنل</label>
+                <input type="password" name="password" required autofocus class="w-full bg-slate-900 border border-slate-700 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-emerald-500 text-left font-mono">
+            </div>
+            <button type="submit" class="w-full py-3 bg-emerald-500 hover:bg-emerald-600 font-bold rounded-xl text-sm transition-colors shadow-lg">ورود</button>
+        </form>
+    </div>
+</body>
+</html>"""
 
+def render_admin_html(profiles, domain: str) -> str:
+    rows = ""
+    for p in profiles:
+        status_badge = (
+            '<span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">مسدود (بلاک)</span>'
+            if p["is_blocked"] else
+            '<span class="px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">فعال</span>'
+        )
+        btn_class = "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400" if p["is_blocked"] else "bg-amber-500/10 hover:bg-amber-500/20 text-amber-400"
+        btn_text = "رفع بلاک" if p["is_blocked"] else "بلاک"
+        rows += f"""
+        <tr class="hover:bg-slate-800/30">
+            <td class="p-4 font-bold">{p['name']}</td>
+            <td class="p-4"><a href="/d/{p['token']}" target="_blank" class="text-emerald-400 hover:underline text-xs font-mono">https://{domain}/d/{p['token']}</a></td>
+            <td class="p-4"><span class="text-slate-400 text-xs font-mono select-all">https://{domain}/sub/{p['token']}</span></td>
+            <td class="p-4">{status_badge}</td>
+            <td class="p-4">
+                <div class="flex justify-center items-center gap-2">
+                    <form action="/admin/profiles/{p['token']}/toggle-block" method="post">
+                        <button type="submit" class="px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors {btn_class}">{btn_text}</button>
+                    </form>
+                    <form action="/admin/profiles/{p['token']}/delete" method="post" onsubmit="return confirm('آیا از حذف این پروفایل اطمینان دارید؟');">
+                        <button type="submit" class="px-3 py-1.5 rounded-lg text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 transition-colors">حذف</button>
+                    </form>
+                </div>
+            </td>
+        </tr>"""
+
+    if not rows:
+        rows = '<tr><td colspan="5" class="p-8 text-center text-slate-500 text-xs">هنوز پروفایلی ساخته نشده است.</td></tr>'
+
+    return f"""<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مدیریت ساب‌ها</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
+    <style>body {{ font-family: Vazirmatn FD, sans-serif; }}</style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen p-4 sm:p-8">
+    <div class="max-w-6xl mx-auto space-y-8">
+        <div class="flex justify-between items-center bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-sm">
+            <div>
+                <h1 class="text-2xl font-bold">کنترل پنل مدیریت ساب‌اسکریپشن</h1>
+                <p class="text-xs text-slate-400 mt-1">دامنه فعال: <span class="font-mono text-emerald-400">{domain}</span></p>
+            </div>
+            <a href="/admin/logout" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl text-xs font-semibold">خروج</a>
+        </div>
+
+        <div class="bg-slate-900 p-6 rounded-3xl border border-slate-800 shadow-sm">
+            <h2 class="text-base font-bold mb-4 flex items-center gap-2"><span>➕</span> تعریف پروفایل / مشتری جدید</h2>
+            <form action="/admin/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">نام یا برند اختصاصی</label>
+                    <input type="text" name="name" placeholder="مثلاً: Ali-VIP" required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">لینک ساب اصلی فروشنده</label>
+                    <input type="url" name="upstream_url" placeholder="https://seller.com/sub/..." required class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 text-left font-mono">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">شناسه اختصاصی (اختیاری)</label>
+                    <div class="flex gap-2">
+                        <input type="text" name="custom_token" placeholder="خالی = تصادفی" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-emerald-500 text-left font-mono">
+                        <button type="submit" class="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-600 font-bold rounded-xl text-sm shrink-0">ثبت</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="bg-slate-900 rounded-3xl border border-slate-800 overflow-hidden shadow-sm">
+            <div class="p-6 border-b border-slate-800">
+                <h2 class="text-base font-bold">پروفایل‌های موجود ({len(profiles)})</h2>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right text-sm">
+                    <thead class="bg-slate-950 text-slate-400 text-xs border-b border-slate-800">
+                        <tr>
+                            <th class="p-4">نام</th>
+                            <th class="p-4">لینک داشبورد کاربر</th>
+                            <th class="p-4">لینک ساب کلاینت</th>
+                            <th class="p-4">وضعیت</th>
+                            <th class="p-4 text-center">عملیات</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/60">
+                        {rows}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</body>
+</html>"""
+
+def render_dashboard_html(ctx: dict) -> str:
+    if ctx["is_blocked"]:
+        body_content = """
+        <div class="p-8 rounded-3xl border border-rose-500/30 bg-rose-500/5 mb-8 text-center">
+            <div class="text-3xl font-bold text-rose-500 mb-2">اشتراک مسدود شده است</div>
+            <p class="text-sm text-slate-500 dark:text-zinc-400">دسترسی این اشتراک توسط مدیر سرور به حالت تعلیق درآمده است.</p>
+        </div>"""
+    else:
+        conf_items = ""
+        for idx, c in enumerate(ctx["configs"]):
+            conf_items += f"""
+            <div class="p-3.5 rounded-xl border border-slate-100 dark:border-zinc-800 hover:border-slate-300 dark:hover:border-zinc-700 flex items-center justify-between gap-3 transition-colors">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="px-2 py-0.5 text-[10px] font-bold uppercase rounded bg-slate-100 dark:bg-zinc-800 text-slate-600 dark:text-zinc-300">{c['proto']}</span>
+                    <span class="text-sm truncate text-slate-700 dark:text-zinc-300" dir="ltr">{c['name']}</span>
+                </div>
+                <div class="flex gap-1.5 shrink-0">
+                    <button onclick="copyConfig({idx})" class="p-2 rounded-lg bg-slate-50 dark:bg-zinc-800 hover:bg-slate-100 text-xs" title="کپی کانفیگ">📋</button>
+                    <button onclick="showConfigQR({idx})" class="p-2 rounded-lg bg-slate-50 dark:bg-zinc-800 hover:bg-slate-100 text-xs" title="نمایش QR">📱</button>
+                </div>
+            </div>"""
+
+        body_content = f"""
+        <div class="p-4 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 mb-8 flex items-start gap-3">
+            <span class="text-emerald-500 text-lg">🔔</span>
+            <div class="text-sm">
+                <div class="font-bold text-emerald-600 dark:text-emerald-400 mb-0.5">اعلان</div>
+                <p class="text-slate-600 dark:text-zinc-400">لطفاً قبل از اتصال، لینک ساب‌اسکریپشن خود را در نرم‌افزار به‌روزرسانی کنید.</p>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+            <div class="lg:col-span-2 p-6 lg:p-8 rounded-3xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm flex flex-col justify-between">
+                <div class="flex justify-between items-start mb-6">
+                    <div class="flex items-center gap-2">
+                        <span class="text-3xl font-bold text-emerald-500">فعال</span>
+                        <span class="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
+                    </div>
+                    <div class="text-left">
+                        <span class="text-xs text-slate-400 block">منقضی می‌شود در</span>
+                        <span class="text-xl font-bold text-slate-700 dark:text-slate-200">{ctx['days_left']} روز</span>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row items-center gap-8">
+                    <div class="relative w-36 h-36 shrink-0">
+                        <svg class="w-full h-full -rotate-90">
+                            <circle cx="50%" cy="50%" r="45%" stroke="currentColor" stroke-width="10" fill="none" class="text-slate-100 dark:text-zinc-800" />
+                            <circle cx="50%" cy="50%" r="45%" stroke="currentColor" stroke-width="10" fill="none"
+                                stroke-dasharray="440" stroke-dashoffset="{ctx['dashoffset']}"
+                                stroke-linecap="round" class="text-emerald-500 transition-all duration-1000" />
+                        </svg>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                            <span class="text-2xl font-bold">{ctx['percent']}%</span>
+                            <span class="text-xs text-slate-400">مصرف شده</span>
+                        </div>
+                    </div>
+
+                    <div class="flex-1 w-full space-y-4">
+                        <div class="flex justify-between items-center text-sm border-b border-slate-100 dark:border-zinc-800 pb-2">
+                            <span class="text-slate-500 dark:text-zinc-400">حجم سرویس</span>
+                            <span class="font-bold font-mono" dir="ltr">{ctx['total_quota']}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-sm border-b border-slate-100 dark:border-zinc-800 pb-2">
+                            <span class="text-slate-500 dark:text-zinc-400">حجم مصرفی</span>
+                            <span class="font-bold font-mono" dir="ltr">{ctx['used_traffic']}</span>
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="text-slate-500 dark:text-zinc-400">حجم باقی‌مانده</span>
+                            <span class="font-bold text-emerald-500 font-mono" dir="ltr">{ctx['remaining_traffic']}</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-4">
+                <div class="p-5 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                    <span class="text-xs text-slate-400 block mb-1">حجم کل مصرفی</span>
+                    <span class="text-2xl font-bold font-mono" dir="ltr">{ctx['used_traffic']}</span>
+                </div>
+                <div class="p-5 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                    <span class="text-xs text-slate-400 block mb-1">تاریخ انقضا</span>
+                    <span class="text-base font-semibold">{ctx['expire_date']}</span>
+                </div>
+                <div class="p-5 rounded-2xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm">
+                    <span class="text-xs text-slate-400 block mb-1">وضعیت لینک ساب</span>
+                    <span class="text-sm font-semibold text-emerald-500 flex items-center gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span> آنلاین و متصل
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="rounded-3xl border border-slate-200/80 dark:border-zinc-800 bg-white dark:bg-zinc-900 p-6 lg:p-8 shadow-sm">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-lg font-bold flex items-center gap-2"><span>🔗</span> لینک کانفیگ‌ها</h2>
+                <button onclick="copyAll()" class="px-4 py-2 text-xs font-semibold rounded-xl bg-emerald-500 text-white hover:bg-emerald-600 transition-colors shadow-sm flex items-center gap-1.5">
+                    📋 کپی همه کانفیگ‌ها
+                </button>
+            </div>
+
+            <div class="space-y-3">
+                <div class="p-3.5 rounded-xl border-2 border-emerald-500/30 bg-emerald-500/5 flex items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="px-2 py-0.5 text-[10px] font-bold rounded bg-emerald-500 text-white">SUB</span>
+                        <span class="text-sm font-medium truncate">لینک اختصاصی ساب‌اسکریپشن</span>
+                    </div>
+                    <div class="flex gap-1.5 shrink-0">
+                        <button onclick="copySubUrl()" class="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 text-xs" title="کپی لینک ساب">📋</button>
+                        <button onclick="showSubQR()" class="p-2 rounded-lg bg-white dark:bg-zinc-800 border border-slate-200 dark:border-zinc-700 hover:bg-slate-50 text-xs" title="نمایش QR">📱</button>
+                    </div>
+                </div>
+                {conf_items}
+            </div>
+        </div>"""
+
+    return f"""<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>داشبورد کاربری | {ctx['brand_name']}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
+    <script>tailwind.config = {{ darkMode: 'class' }}</script>
+    <style>
+        body {{ font-family: Vazirmatn FD, sans-serif; }}
+        .bg-grid-pattern {{
+            background-image: linear-gradient(90deg, currentColor 1px, transparent 1px),
+                              linear-gradient(currentColor 1px, transparent 1px);
+            background-size: 32px 32px;
+        }}
+    </style>
+</head>
+<body class="bg-slate-50 dark:bg-zinc-950 text-slate-800 dark:text-slate-100 min-h-screen">
+    <div class="fixed inset-0 bg-grid-pattern opacity-[0.03] pointer-events-none"></div>
+    <div class="container mx-auto px-4 py-8 max-w-6xl relative z-10">
+        <div class="flex items-center justify-between mb-8">
+            <div>
+                <h1 class="text-3xl font-bold tracking-tight mb-1">داشبورد کاربری</h1>
+                <p class="text-sm text-slate-500 dark:text-zinc-400 font-mono" dir="ltr">{ctx['brand_name']}</p>
+            </div>
+            <button onclick="document.documentElement.classList.toggle('dark')" class="p-2.5 rounded-xl border border-slate-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm hover:bg-slate-100 dark:hover:bg-zinc-800 transition-colors">🌙</button>
+        </div>
+        {body_content}
+    </div>
+
+    <div id="qrModal" class="fixed inset-0 bg-black/60 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeQR()">
+        <div class="bg-white dark:bg-zinc-900 p-6 rounded-3xl shadow-xl max-w-xs w-full flex flex-col items-center text-center" onclick="event.stopPropagation()">
+            <h3 class="font-bold text-sm mb-4">اسکن کد QR</h3>
+            <img id="qrImage" src="" alt="QR Code" class="w-52 h-52 rounded-xl mb-4 border border-slate-100 dark:border-zinc-800">
+            <button onclick="closeQR()" class="w-full py-2 bg-slate-100 dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 text-xs font-semibold rounded-xl transition-colors">بستن</button>
+        </div>
+    </div>
+
+    <script>
+        const subUrl = {json.dumps(ctx['sub_url'])};
+        const allConfigs = {ctx['configs_json']};
+
+        function copySubUrl() {{
+            navigator.clipboard.writeText(subUrl);
+            alert("لینک ساب کپی شد!");
+        }}
+        function copyConfig(idx) {{
+            navigator.clipboard.writeText(allConfigs[idx]);
+            alert("کانفیگ کپی شد!");
+        }}
+        function copyAll() {{
+            if (allConfigs.length > 0) {{
+                navigator.clipboard.writeText(allConfigs.join("\\n"));
+                alert("تمام کانفیگ‌ها کپی شدند!");
+            }}
+        }}
+        function openQRModal(text) {{
+            document.getElementById("qrImage").src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" + encodeURIComponent(text);
+            document.getElementById("qrModal").classList.remove("hidden");
+            document.getElementById("qrModal").classList.add("flex");
+        }}
+        function showSubQR() {{ openQRModal(subUrl); }}
+        function showConfigQR(idx) {{ openQRModal(allConfigs[idx]); }}
+        function closeQR() {{
+            document.getElementById("qrModal").classList.add("hidden");
+            document.getElementById("qrModal").classList.remove("flex");
+        }}
+    </script>
+</body>
+</html>"""
+
+# ----------------- مسیرها (Routes) -----------------
 @app.get("/")
 async def root():
     return RedirectResponse(url="/admin")
@@ -162,17 +492,20 @@ async def root():
 async def get_user_sub(token: str):
     with get_db() as conn:
         profile = conn.execute("SELECT * FROM profiles WHERE token = ?", (token,)).fetchone()
-    
+
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
-    
+
     if profile["is_blocked"] == 1:
         return Response(content="Subscription is blocked by administrator.", status_code=403)
 
-    raw_text, headers = await fetch_upstream(token, profile["upstream_url"])
-    _, encoded_sub = parse_and_modify_configs(raw_text, profile["name"])
-    user_info = headers.get("subscription-userinfo", "")
-    
+    try:
+        raw_text, headers = await fetch_upstream(token, profile["upstream_url"])
+        _, encoded_sub = parse_and_modify_configs(raw_text, profile["name"])
+        user_info = headers.get("subscription-userinfo", "")
+    except Exception:
+        return Response(content="", status_code=502)
+
     return Response(
         content=encoded_sub,
         media_type="text/plain; charset=utf-8",
@@ -186,14 +519,14 @@ async def get_user_sub(token: str):
 async def user_dashboard(request: Request, token: str):
     with get_db() as conn:
         profile = conn.execute("SELECT * FROM profiles WHERE token = ?", (token,)).fetchone()
-    
+
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
     is_blocked = bool(profile["is_blocked"])
     upload = download = total_quota = expire_ts = 0
     configs = []
-    
+
     if not is_blocked:
         try:
             raw_text, headers = await fetch_upstream(token, profile["upstream_url"])
@@ -219,11 +552,10 @@ async def user_dashboard(request: Request, token: str):
         jy, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
         expire_jalali = f"{jy}/{jm:02d}/{jd:02d}, {dt.strftime('%H:%M')}"
 
-    clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "")
+    clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
     sub_url = f"https://{clean_domain}/sub/{token}"
 
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
+    ctx = {
         "brand_name": profile["name"],
         "is_blocked": is_blocked,
         "percent": percent,
@@ -236,34 +568,31 @@ async def user_dashboard(request: Request, token: str):
         "sub_url": sub_url,
         "configs": configs,
         "configs_json": json.dumps([c["link"] for c in configs])
-    })
+    }
+    return HTMLResponse(content=render_dashboard_html(ctx))
 
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_panel(request: Request):
     if not is_admin(request):
-        return templates.TemplateResponse("admin_login.html", {"request": request, "error": None})
+        return HTMLResponse(content=render_login_html())
 
     with get_db() as conn:
         profiles = conn.execute("SELECT * FROM profiles ORDER BY id DESC").fetchall()
-    
-    clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "")
-    return templates.TemplateResponse("admin_panel.html", {
-        "request": request,
-        "profiles": profiles,
-        "domain": clean_domain
-    })
+
+    clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
+    return HTMLResponse(content=render_admin_html(profiles, clean_domain))
 
 @app.post("/admin/login")
 async def admin_login(request: Request):
     body = await request.body()
-    form_data = urllib.parse.parse_qs(body.decode("utf-8"))
+    form_data = urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
     password = form_data.get("password", [""])[0]
 
     if password == ADMIN_PASSWORD:
         response = RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
         response.set_cookie(key=COOKIE_NAME, value=ADMIN_PASSWORD, httponly=True, max_age=86400 * 7)
         return response
-    return templates.TemplateResponse("admin_login.html", {"request": request, "error": "رمز عبور نادرست است."})
+    return HTMLResponse(content=render_login_html("رمز عبور نادرست است."))
 
 @app.get("/admin/logout")
 async def admin_logout():
@@ -275,9 +604,9 @@ async def admin_logout():
 async def add_profile(request: Request):
     if not is_admin(request):
         raise HTTPException(status_code=401)
-    
+
     body = await request.body()
-    form_data = urllib.parse.parse_qs(body.decode("utf-8"))
+    form_data = urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
     name = form_data.get("name", [""])[0].strip()
     upstream_url = form_data.get("upstream_url", [""])[0].strip()
     custom_token = form_data.get("custom_token", [""])[0].strip()
@@ -285,15 +614,16 @@ async def add_profile(request: Request):
     token = custom_token if custom_token else secrets.token_hex(6)
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    with get_db() as conn:
-        try:
-            conn.execute(
-                "INSERT INTO profiles (token, name, upstream_url, is_blocked, created_at) VALUES (?, ?, ?, 0, ?)",
-                (token, name, upstream_url, created_at)
-            )
-            conn.commit()
-        except sqlite3.IntegrityError:
-            pass
+    if name and upstream_url:
+        with get_db() as conn:
+            try:
+                conn.execute(
+                    "INSERT INTO profiles (token, name, upstream_url, is_blocked, created_at) VALUES (?, ?, ?, 0, ?)",
+                    (token, name, upstream_url, created_at)
+                )
+                conn.commit()
+            except sqlite3.IntegrityError:
+                pass
 
     return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
 
@@ -301,14 +631,12 @@ async def add_profile(request: Request):
 async def toggle_block(request: Request, token: str):
     if not is_admin(request):
         raise HTTPException(status_code=401)
-    
+
     with get_db() as conn:
         conn.execute("UPDATE profiles SET is_blocked = CASE WHEN is_blocked = 1 THEN 0 ELSE 1 END WHERE token = ?", (token,))
         conn.commit()
 
-    if token in sub_cache:
-        del sub_cache[token]
-
+    sub_cache.pop(token, None)
     return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
 
 @app.post("/admin/profiles/{token}/delete")
@@ -321,9 +649,7 @@ async def delete_profile(request: Request, token: str):
         conn.execute("DELETE FROM daily_usage WHERE token = ?", (token,))
         conn.commit()
 
-    if token in sub_cache:
-        del sub_cache[token]
-
+    sub_cache.pop(token, None)
     return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
 
 @app.post("/webhook")
@@ -331,7 +657,11 @@ async def telegram_webhook(req: Request):
     if not BOT_TOKEN:
         return Response(status_code=200)
 
-    update = await req.json()
+    try:
+        update = await req.json()
+    except Exception:
+        return Response(status_code=200)
+
     if "message" not in update:
         return Response(status_code=200)
 
@@ -340,35 +670,4 @@ async def telegram_webhook(req: Request):
     text = message.get("text", "")
 
     if text.startswith(("/start", "/stats")):
-        with get_db() as conn:
-            profile = conn.execute("SELECT * FROM profiles ORDER BY id DESC LIMIT 1").fetchone()
-
-        if not profile:
-            caption = "هیچ پروفایلی در سیستم ثبت نشده است."
-        else:
-            raw_text, headers = await fetch_upstream(profile["token"], profile["upstream_url"])
-            info = parse_user_info(headers.get("subscription-userinfo", ""))
-            used_gb = (info.get("upload", 0) + info.get("download", 0)) / (1024**3)
-            total_gb = info.get("total", 0) / (1024**3)
-            remaining_gb = max(0.0, total_gb - used_gb)
-
-            clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "")
-            sub_link = f"https://{clean_domain}/sub/{profile['token']}"
-            dash_link = f"https://{clean_domain}/d/{profile['token']}"
-
-            caption = (
-                f"🏷 Brand: {profile['name']}\n"
-                f"📊 Total: `{total_gb:.2f}` GB\n"
-                f"📉 Used: `{used_gb:.2f}` GB\n"
-                f"📈 Remaining: `{remaining_gb:.2f}` GB\n\n"
-                f"🌐 داشبورد وب:\n{dash_link}\n\n"
-                f"🔗 لینک ساب:\n`{sub_link}`"
-            )
-
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{TELEGRAM_API}/sendMessage",
-                json={"chat_id": chat_id, "text": caption, "parse_mode": "Markdown"}
-            )
-
-    return Response(status_code=200)
+        with get
