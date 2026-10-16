@@ -1,6 +1,4 @@
 fastapi
 uvicorn
 httpx
-pyrogram
-tgcrypto
-matplotlib
+jinja2
