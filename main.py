@@ -7,7 +7,7 @@ import secrets
 import urllib.parse
 from datetime import datetime
 import httpx
-from fastapi import FastAPI, Request, Form, Depends, HTTPException, status
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import Response, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
@@ -19,6 +19,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 DATA_DIR = "/data" if os.path.exists("/data") else "."
 DB_FILE = os.path.join(DATA_DIR, "usage_history.db")
 COOKIE_NAME = "admin_session"
+TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 app = FastAPI()
 templates = Jinja2Templates(directory="templates")
@@ -26,7 +27,6 @@ templates = Jinja2Templates(directory="templates")
 CACHE_TTL = 120
 sub_cache = {}
 
-# ----------------- پایگاه داده -----------------
 def get_db():
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
@@ -56,7 +56,6 @@ def init_db():
 
 init_db()
 
-# ----------------- توابع کمکی -----------------
 def gregorian_to_jalali(gy, gm, gd):
     g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
     jy = 0 if gy <= 1600 else 979
@@ -147,7 +146,18 @@ def is_admin(request: Request) -> bool:
     session = request.cookies.get(COOKIE_NAME)
     return session == ADMIN_PASSWORD
 
-# ----------------- مسیرهای ساب و داشبورد کاربر -----------------
+@app.on_event("startup")
+async def setup_webhook():
+    if BOT_TOKEN and PUBLIC_URL != "localhost:8000":
+        clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "")
+        webhook_url = f"https://{clean_domain}/webhook"
+        async with httpx.AsyncClient() as client:
+            await client.post(f"{TELEGRAM_API}/setWebhook", json={"url": webhook_url})
+
+@app.get("/")
+async def root():
+    return RedirectResponse(url="/admin")
+
 @app.get("/sub/{token}")
 async def get_user_sub(token: str):
     with get_db() as conn:
@@ -181,7 +191,6 @@ async def user_dashboard(request: Request, token: str):
         raise HTTPException(status_code=404, detail="Profile not found")
 
     is_blocked = bool(profile["is_blocked"])
-    
     upload = download = total_quota = expire_ts = 0
     configs = []
     
@@ -229,7 +238,6 @@ async def user_dashboard(request: Request, token: str):
         "configs_json": json.dumps([c["link"] for c in configs])
     })
 
-# ----------------- پنل مدیریت (Admin) -----------------
 @app.get("/admin", response_class=HTMLResponse)
 async def admin_panel(request: Request):
     if not is_admin(request):
@@ -246,12 +254,16 @@ async def admin_panel(request: Request):
     })
 
 @app.post("/admin/login")
-async def admin_login(password: str = Form(...)):
+async def admin_login(request: Request):
+    body = await request.body()
+    form_data = urllib.parse.parse_qs(body.decode("utf-8"))
+    password = form_data.get("password", [""])[0]
+
     if password == ADMIN_PASSWORD:
         response = RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
         response.set_cookie(key=COOKIE_NAME, value=ADMIN_PASSWORD, httponly=True, max_age=86400 * 7)
         return response
-    return templates.TemplateResponse("admin_login.html", {"request": Request, "error": "رمز عبور نادرست است."})
+    return templates.TemplateResponse("admin_login.html", {"request": request, "error": "رمز عبور نادرست است."})
 
 @app.get("/admin/logout")
 async def admin_logout():
@@ -260,23 +272,24 @@ async def admin_logout():
     return response
 
 @app.post("/admin/profiles/add")
-async def add_profile(
-    request: Request,
-    name: str = Form(...),
-    upstream_url: str = Form(...),
-    custom_token: str = Form(None)
-):
+async def add_profile(request: Request):
     if not is_admin(request):
         raise HTTPException(status_code=401)
     
-    token = custom_token.strip() if custom_token and custom_token.strip() else secrets.token_hex(6)
+    body = await request.body()
+    form_data = urllib.parse.parse_qs(body.decode("utf-8"))
+    name = form_data.get("name", [""])[0].strip()
+    upstream_url = form_data.get("upstream_url", [""])[0].strip()
+    custom_token = form_data.get("custom_token", [""])[0].strip()
+
+    token = custom_token if custom_token else secrets.token_hex(6)
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     with get_db() as conn:
         try:
             conn.execute(
                 "INSERT INTO profiles (token, name, upstream_url, is_blocked, created_at) VALUES (?, ?, ?, 0, ?)",
-                (token, name.strip(), upstream_url.strip(), created_at)
+                (token, name, upstream_url, created_at)
             )
             conn.commit()
         except sqlite3.IntegrityError:
@@ -312,3 +325,50 @@ async def delete_profile(request: Request, token: str):
         del sub_cache[token]
 
     return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
+
+@app.post("/webhook")
+async def telegram_webhook(req: Request):
+    if not BOT_TOKEN:
+        return Response(status_code=200)
+
+    update = await req.json()
+    if "message" not in update:
+        return Response(status_code=200)
+
+    message = update["message"]
+    chat_id = message.get("chat", {}).get("id")
+    text = message.get("text", "")
+
+    if text.startswith(("/start", "/stats")):
+        with get_db() as conn:
+            profile = conn.execute("SELECT * FROM profiles ORDER BY id DESC LIMIT 1").fetchone()
+
+        if not profile:
+            caption = "هیچ پروفایلی در سیستم ثبت نشده است."
+        else:
+            raw_text, headers = await fetch_upstream(profile["token"], profile["upstream_url"])
+            info = parse_user_info(headers.get("subscription-userinfo", ""))
+            used_gb = (info.get("upload", 0) + info.get("download", 0)) / (1024**3)
+            total_gb = info.get("total", 0) / (1024**3)
+            remaining_gb = max(0.0, total_gb - used_gb)
+
+            clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "")
+            sub_link = f"https://{clean_domain}/sub/{profile['token']}"
+            dash_link = f"https://{clean_domain}/d/{profile['token']}"
+
+            caption = (
+                f"🏷 Brand: {profile['name']}\n"
+                f"📊 Total: `{total_gb:.2f}` GB\n"
+                f"📉 Used: `{used_gb:.2f}` GB\n"
+                f"📈 Remaining: `{remaining_gb:.2f}` GB\n\n"
+                f"🌐 داشبورد وب:\n{dash_link}\n\n"
+                f"🔗 لینک ساب:\n`{sub_link}`"
+            )
+
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{TELEGRAM_API}/sendMessage",
+                json={"chat_id": chat_id, "text": caption, "parse_mode": "Markdown"}
+            )
+
+    return Response(status_code=200)
