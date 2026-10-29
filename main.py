@@ -13,7 +13,7 @@ import urllib.parse
 from datetime import datetime
 from contextlib import asynccontextmanager
 import httpx
-from fastapi import FastAPI, Request, HTTPException, status
+from fastapi import FastAPI, Request, HTTPException, status, UploadFile, File, Form
 from fastapi.responses import Response, HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
 
@@ -31,7 +31,7 @@ COOKIE_NAME = "admin_session"
 SESSION_TTL = 86400 * 7
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-CACHE_TTL = int(os.getenv("CACHE_TTL", "300"))
+CACHE_TTL = int(os.getenv("CACHE_TTL", "120"))
 MAX_CACHE_SIZE = 200
 MAX_REQUEST_BODY = 65536
 MAX_UPSTREAM_BYTES = 2097152
@@ -190,11 +190,32 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- محاسبات تاریخ و ترافیک -----------------
+# ----------------- محاسبات تاریخ، زمان آنلاین و ترافیک -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
     return str(s).translate(PERSIAN_DIGITS)
+
+def format_relative_time(past_timestamp: float) -> str:
+    diff = int(time.time() - past_timestamp)
+    if diff < 0:
+        return "هم‌اکنون"
+    if diff < 60:
+        return f"{to_persian_num(str(diff))} ثانیه پیش"
+    minutes = diff // 60
+    if minutes < 60:
+        return f"{to_persian_num(str(minutes))} دقیقه پیش"
+    hours = minutes // 60
+    if hours < 24:
+        return f"{to_persian_num(str(hours))} ساعت پیش"
+    days = hours // 24
+    if days < 7:
+        return f"{to_persian_num(str(days))} روز پیش"
+    weeks = days // 7
+    if weeks < 4:
+        return f"{to_persian_num(str(weeks))} هفته پیش"
+    months = days // 30
+    return f"{to_persian_num(str(months))} ماه پیش"
 
 def gregorian_to_jalali(gy, gm, gd):
     g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
@@ -218,18 +239,60 @@ def now_jalali_str() -> str:
     jy, jm, jd = gregorian_to_jalali(now_dt.year, now_dt.month, now_dt.day)
     return to_persian_num(f"{jy}/{jm:02d}/{jd:02d} {now_dt.strftime('%H:%M')}")
 
-def parse_user_info(header_val: str) -> dict:
+def parse_user_info(header_val: str, all_headers: dict = None) -> dict:
     data = {}
-    if not header_val:
-        return data
-    for item in header_val.split(";"):
-        if "=" in item:
-            k, v = item.strip().split("=", 1)
-            try:
-                data[k.strip()] = int(float(v.strip()))
-            except ValueError:
-                pass
+    if header_val:
+        for item in header_val.split(";"):
+            if "=" in item:
+                k, v = item.strip().split("=", 1)
+                k_clean = k.strip().lower()
+                v_clean = v.strip()
+                try:
+                    data[k_clean] = int(float(v_clean))
+                except ValueError:
+                    data[k_clean] = v_clean
+
+    # بررسی هدرهای مرسوم پنل‌های مختلف برای پیدا کردن آخرین استفاده
+    if all_headers:
+        for possible_key in ("last-online", "x-last-online", "last-use", "online-status", "status"):
+            if possible_key in all_headers and possible_key not in data:
+                val = all_headers[possible_key]
+                try:
+                    data[possible_key] = int(float(val))
+                except ValueError:
+                    data[possible_key] = val
+
     return data
+
+def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
+    """
+    بررسی وضعیت زنده بودن و محاسبه دقیق آخرین اتصال بر حسب ثانیه/دقیقه/ساعت/روز/هفته
+    """
+    now = time.time()
+    
+    # 1. جستجو در کلیدهای استخراج‌شده از هدر
+    for key in ("last_online", "last-online", "last_use", "last-use", "online_at"):
+        if key in info:
+            val = info[key]
+            try:
+                ts = float(val)
+                diff = now - ts
+                if 0 <= diff <= 180:  # کمتر از ۳ دقیقه = در حال استفاده
+                    return True, "روشن و در حال استفاده"
+                return False, format_relative_time(ts)
+            except Exception:
+                pass
+
+    # 2. بررسی خطوط عنوان یا تگ‌هایی که بعضی پنل‌ها درون نام کانفیگ‌ها تزریق می‌کنند
+    for c in configs:
+        name_lower = c["name"].lower()
+        if "online" in name_lower or "متصل" in name_lower:
+            return True, "روشن و در حال استفاده"
+        if "آخرین اتصال" in name_lower or "last seen" in name_lower:
+            return False, c["name"].replace("آخرین اتصال:", "").strip()
+
+    # 3. در صورت نبود داده صریح
+    return False, "عدم پشتیبانی توسط سرور مبدا"
 
 def apply_fake_traffic(upload: int, download: int, total: int, fake_total_gb: float) -> tuple[int, int, int]:
     if not fake_total_gb or fake_total_gb <= 0:
@@ -337,13 +400,16 @@ async def get_cached_sub_data(token: str, upstream_url: str):
     raw_text = res.text.strip()
     
     configs, encoded_sub = parse_and_modify_configs(raw_text)
-    info = parse_user_info(resp_headers.get("subscription-userinfo", ""))
+    info = parse_user_info(resp_headers.get("subscription-userinfo", ""), resp_headers)
+    is_online, last_seen_text = extract_online_status(info, configs)
 
     data = {
         "configs": configs,
         "configs_json": json.dumps([c["link"] for c in configs]),
         "encoded_sub": encoded_sub,
         "info": info,
+        "is_online": is_online,
+        "last_seen_text": last_seen_text,
         "raw_userinfo": resp_headers.get("subscription-userinfo", ""),
         "timestamp": now
     }
@@ -358,7 +424,7 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- سیستم طراحی و انیمیشن -----------------
+# ----------------- سیستم طراحی و استایل -----------------
 ANIMATED_DESIGN_SYSTEM_CSS = """
 :root {
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -402,7 +468,6 @@ body {
 ::-webkit-scrollbar-track { background: transparent !important; }
 ::-webkit-scrollbar-thumb { background: rgba(75, 133, 209, 0.35); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(75, 133, 209, 0.8); }
-::-webkit-scrollbar-button { display: none !important; }
 
 @keyframes emilEnter {
     from {
@@ -439,14 +504,6 @@ body {
     }
     .hover-lift:hover {
         transform: translateY(-2px);
-    }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .animate-enter, .btn-press, .hover-lift {
-        animation: none !important;
-        transition: opacity var(--duration-snappy) ease !important;
-        transform: none !important;
     }
 }
 
@@ -523,12 +580,14 @@ def render_login_html(error: str = None) -> str:
 </body>
 </html>"""
 
-def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
+def render_admin_html(profiles, domain: str, csrf_token: str, alert_msg: str = None) -> str:
     total_count = len(profiles)
     blocked_count = sum(1 for p in profiles if p["is_blocked"])
     active_count = total_count - blocked_count
     total_hits = sum((p["sub_hits"] or 0) for p in profiles)
     cached_items = len(sub_cache)
+
+    alert_box = f'<div class="p-4 mb-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-[#4b85d1] text-xs font-bold text-center animate-enter">{html.escape(alert_msg)}</div>' if alert_msg else ""
 
     rows = ""
     for p in profiles:
@@ -545,8 +604,16 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             info = cached_data["info"]
             u, d, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_val)
             traffic_badge = f"<span class='text-xs font-mono text-emerald-400' dir='ltr'>{format_bytes(u+d)} / {format_bytes(tot)}</span>"
+            
+            # نشان وضعیت اتصال
+            if cached_data.get("is_online"):
+                online_badge = '<span class="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>آنلاین</span>'
+            else:
+                last_s = cached_data.get("last_seen_text", "نامشخص")
+                online_badge = f'<span class="text-[11px] text-slate-400">{last_s}</span>'
         else:
             traffic_badge = "<span class='text-[11px] text-slate-500'>آماده همگام‌سازی</span>"
+            online_badge = "<span class='text-[11px] text-slate-500'>نامشخص</span>"
 
         status_badge = (
             '<span class="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>مسدود</span>'
@@ -590,6 +657,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
                     </a>
                 </div>
             </td>
+            <td class="p-4 whitespace-nowrap text-center">{online_badge}</td>
             <td class="p-4 whitespace-nowrap text-center">{fake_label}</td>
             <td class="p-4 whitespace-nowrap text-center">{traffic_badge}</td>
             <td class="p-4 whitespace-nowrap">
@@ -617,7 +685,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
         </tr>"""
 
     if not rows:
-        rows = '<tr><td colspan="7" class="p-10 text-center text-slate-500 text-xs">هنوز هیچ سابی ثبت نشده است.</td></tr>'
+        rows = '<tr><td colspan="8" class="p-10 text-center text-slate-500 text-xs">هنوز هیچ سابی ثبت نشده است.</td></tr>'
 
     return f"""<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
@@ -631,6 +699,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
 </head>
 <body class="min-h-screen p-4 sm:p-6 lg:p-8 flex flex-col justify-between">
     <main class="max-w-7xl w-full mx-auto space-y-6 animate-enter">
+        {alert_box}
         <header class="flex flex-wrap justify-between items-center gap-4 surface-card p-6 rounded-3xl">
             <div class="flex items-center gap-3.5">
                 <div class="w-12 h-12 rounded-2xl bg-[#4b85d1]/15 border border-[#4b85d1]/30 flex items-center justify-center text-[#4b85d1]">
@@ -647,6 +716,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
                     <button type="submit" class="btn-press min-h-[42px] px-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-xs font-bold transition-colors cursor-pointer">پاکسازی کل کش ({cached_items})</button>
                 </form>
                 <a href="/admin/backup" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-[#4b85d1]/15 hover:bg-[#4b85d1]/25 text-[#4b85d1] border border-[#4b85d1]/30 rounded-xl text-xs font-bold transition-colors">دانلود بکاپ JSON</a>
+                <button type="button" onclick="openRestoreModal()" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-bold transition-colors cursor-pointer">بازیابی / آپلود بکاپ</button>
                 <a href="/admin/logout" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-colors">خروج</a>
             </div>
         </header>
@@ -725,6 +795,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
                         <tr>
                             <th class="p-4 whitespace-nowrap">نام ساب / یادداشت</th>
                             <th class="p-4 whitespace-nowrap">لینک‌ها</th>
+                            <th class="p-4 whitespace-nowrap text-center">وضعیت آنلاین</th>
                             <th class="p-4 whitespace-nowrap text-center">حجم فیک</th>
                             <th class="p-4 whitespace-nowrap text-center">مصرف کش‌شده</th>
                             <th class="p-4 whitespace-nowrap">آمار کلاینت</th>
@@ -740,6 +811,30 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
         </section>
     </main>
 
+    <!-- مودال آپلود و بازگردانی بکاپ -->
+    <div id="restoreModal" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeRestoreModal()">
+        <div class="surface-card rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl animate-enter" onclick="event.stopPropagation()">
+            <h3 class="text-lg font-bold mb-2">بازیابی دیتابیس از فایل بکاپ</h3>
+            <p class="text-xs text-slate-400 mb-5">فایل بکاپ JSON را آپلود کنید تا اشتراک‌ها بازگردانی شوند.</p>
+            <form action="/admin/backup/restore" method="post" enctype="multipart/form-data" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{csrf_token}">
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">انتخاب فایل JSON</label>
+                    <input type="file" name="file" accept=".json" required class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#4b85d1]">
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="overwrite_existing" name="overwrite_existing" value="1" class="rounded">
+                    <label for="overwrite_existing" class="text-xs text-slate-300">در صورت وجود توکن تکراری، اطلاعات به‌روز شود</label>
+                </div>
+                <div class="flex gap-2 pt-2">
+                    <button type="submit" class="btn-press flex-1 min-h-[42px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer">آپلود و اعمال بکاپ</button>
+                    <button type="button" onclick="closeRestoreModal()" class="btn-press px-4 min-h-[42px] bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer">انصراف</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- مودال ویرایش -->
     <div id="editModal" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
         <div class="surface-card rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl animate-enter" onclick="event.stopPropagation()">
             <h3 class="text-lg font-bold mb-4">ویرایش اطلاعات ساب</h3>
@@ -773,6 +868,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
         </div>
     </div>
 
+    <!-- مودال QR کد -->
     <div id="adminQrModal" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeAdminQR()">
         <div class="surface-card p-6 rounded-3xl max-w-xs w-full flex flex-col items-center text-center animate-enter" onclick="event.stopPropagation()">
             <h3 id="adminQrTitle" class="font-bold text-sm mb-4">QR Code</h3>
@@ -815,6 +911,14 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             document.getElementById('editModal').classList.add('hidden');
             document.getElementById('editModal').classList.remove('flex');
         }}
+        function openRestoreModal() {{
+            document.getElementById('restoreModal').classList.remove('hidden');
+            document.getElementById('restoreModal').classList.add('flex');
+        }}
+        function closeRestoreModal() {{
+            document.getElementById('restoreModal').classList.add('hidden');
+            document.getElementById('restoreModal').classList.remove('flex');
+        }}
         function filterTable() {{
             const q = document.getElementById('searchInput').value.toLowerCase();
             const st = document.getElementById('statusFilter').value;
@@ -843,6 +947,13 @@ def render_dashboard_html(ctx: dict) -> str:
     safe_brand = html.escape(ctx["brand_name"])
     safe_notice = html.escape(ctx["custom_notice"]) if ctx.get("custom_notice") else "لطفاً قبل از اتصال، یک‌بار لینک اشتراک (Update Subscription) را درون نرم‌افزار خود به‌روزرسانی کنید."
     
+    online_indicator = (
+        '<div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold">'
+        '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>آنلاین (در حال استفاده)</div>'
+        if ctx.get("is_online") else
+        f'<div class="text-xs text-slate-400">آخرین اتصال: <span class="font-bold text-slate-300">{ctx.get("last_seen_text", "نامشخص")}</span></div>'
+    )
+
     if ctx["is_blocked"]:
         main_section = """
         <div role="alert" class="p-8 rounded-3xl border border-rose-500/30 bg-rose-500/5 mb-8 text-center shadow-lg animate-enter">
@@ -928,12 +1039,9 @@ def render_dashboard_html(ctx: dict) -> str:
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-8 animate-enter stagger-1">
             <div class="lg:col-span-2 surface-card p-6 sm:p-8 rounded-3xl shadow-lg flex flex-col justify-between">
                 <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
-                    <div class="flex items-center gap-2.5">
+                    <div class="flex items-center gap-3">
                         <span class="text-2xl sm:text-3xl font-extrabold text-emerald-500">فعال</span>
-                        <span class="relative flex h-3 w-3">
-                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                            <span class="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
-                        </span>
+                        {online_indicator}
                     </div>
                     <div class="sm:text-left">
                         <div class="text-xs opacity-70">اعتبار زمانی</div>
@@ -1270,6 +1378,8 @@ async def user_dashboard(request: Request, token: str):
     upload = download = total_quota = expire_ts = 0
     configs = []
     configs_json = "[]"
+    is_online = False
+    last_seen_text = "نامشخص"
 
     if not is_blocked:
         try:
@@ -1277,6 +1387,8 @@ async def user_dashboard(request: Request, token: str):
             info = sub_data["info"]
             configs = sub_data["configs"]
             configs_json = sub_data["configs_json"]
+            is_online = sub_data.get("is_online", False)
+            last_seen_text = sub_data.get("last_seen_text", "نامشخص")
             
             raw_up = info.get("upload", 0)
             raw_down = info.get("download", 0)
@@ -1308,6 +1420,8 @@ async def user_dashboard(request: Request, token: str):
         "brand_name": profile["name"],
         "custom_notice": profile["custom_notice"] or "",
         "is_blocked": is_blocked,
+        "is_online": is_online,
+        "last_seen_text": last_seen_text,
         "percent": percent,
         "dashoffset": dashoffset,
         "total_quota": format_bytes(total_quota),
@@ -1323,7 +1437,7 @@ async def user_dashboard(request: Request, token: str):
     return HTMLResponse(content=render_dashboard_html(ctx))
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_panel(request: Request):
+async def admin_panel(request: Request, msg: str = None):
     if not is_admin(request):
         return HTMLResponse(content=render_login_html())
 
@@ -1332,7 +1446,7 @@ async def admin_panel(request: Request):
 
     clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
     csrf_tok = get_csrf_token(request)
-    return HTMLResponse(content=render_admin_html(profiles, clean_domain, csrf_tok))
+    return HTMLResponse(content=render_admin_html(profiles, clean_domain, csrf_tok, alert_msg=msg))
 
 @app.post("/admin/login")
 async def admin_login(request: Request):
@@ -1380,6 +1494,68 @@ async def admin_backup(request: Request):
         content={"backup_date": datetime.now().isoformat(), "profiles": data},
         headers={"Content-Disposition": "attachment; filename=datacenter_subs_backup.json"}
     )
+
+@app.post("/admin/backup/restore")
+async def admin_restore_backup(
+    request: Request,
+    csrf_token: str = Form(...),
+    file: UploadFile = File(...),
+    overwrite_existing: str = Form(None)
+):
+    if not is_admin(request):
+        raise HTTPException(status_code=401)
+    if not verify_csrf(request, csrf_token):
+        raise HTTPException(status_code=403, detail="CSRF token invalid")
+
+    try:
+        content = await file.read()
+        backup_data = json.loads(content.decode("utf-8"))
+        profiles = backup_data.get("profiles", [])
+    except Exception:
+        return RedirectResponse(url="/admin?msg=فایل%20بکاپ%20نامعتبر%20است", status_code=status.HTTP_302_FOUND)
+
+    restored_count = 0
+    with get_db() as conn:
+        for p in profiles:
+            token = p.get("token")
+            name = p.get("name")
+            upstream_url = p.get("upstream_url")
+            fake_total_gb = float(p.get("fake_total_gb", 0.0))
+            custom_notice = p.get("custom_notice", "")
+            admin_note = p.get("admin_note", "")
+            sub_hits = int(p.get("sub_hits", 0))
+            last_sub_fetch = p.get("last_sub_fetch", "")
+            is_blocked = int(p.get("is_blocked", 0))
+            created_at = p.get("created_at", datetime.now().strftime("%Y-%m-%d %H:%M"))
+
+            if not token or not name or not upstream_url:
+                continue
+
+            if overwrite_existing:
+                conn.execute("""
+                    INSERT INTO profiles (token, name, upstream_url, fake_total_gb, custom_notice, admin_note, sub_hits, last_sub_fetch, is_blocked, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(token) DO UPDATE SET
+                        name=excluded.name,
+                        upstream_url=excluded.upstream_url,
+                        fake_total_gb=excluded.fake_total_gb,
+                        custom_notice=excluded.custom_notice,
+                        admin_note=excluded.admin_note,
+                        sub_hits=excluded.sub_hits,
+                        last_sub_fetch=excluded.last_sub_fetch,
+                        is_blocked=excluded.is_blocked
+                """, (token, name, upstream_url, fake_total_gb, custom_notice, admin_note, sub_hits, last_sub_fetch, is_blocked, created_at))
+            else:
+                conn.execute("""
+                    INSERT OR IGNORE INTO profiles (token, name, upstream_url, fake_total_gb, custom_notice, admin_note, sub_hits, last_sub_fetch, is_blocked, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, (token, name, upstream_url, fake_total_gb, custom_notice, admin_note, sub_hits, last_sub_fetch, is_blocked, created_at))
+            restored_count += 1
+        conn.commit()
+
+    sub_cache.clear()
+    msg = urllib.parse.quote(f"تعداد {restored_count} اشتراک با موفقیت بازگردانی شد.")
+    return RedirectResponse(url=f"/admin?msg={msg}", status_code=status.HTTP_302_FOUND)
 
 @app.post("/admin/cache/clear")
 async def clear_all_cache(request: Request):
@@ -1551,8 +1727,11 @@ async def telegram_webhook(req: Request):
                 used_gb = (u + d) / (1024**3)
                 total_gb = tot / (1024**3)
                 remaining_gb = max(0.0, total_gb - used_gb)
+                
+                status_txt = "🟢 آنلاین و در حال استفاده" if sub_data.get("is_online") else f"⚪ آخرین استفاده: {sub_data.get('last_seen_text', 'نامشخص')}"
             except Exception:
                 used_gb = total_gb = remaining_gb = 0.0
+                status_txt = "نامشخص"
 
             clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
             sub_link = f"https://{clean_domain}/sub/{profile['token']}"
@@ -1560,6 +1739,7 @@ async def telegram_webhook(req: Request):
 
             caption = (
                 f"🏷 Brand: {profile['name']}\n"
+                f"📶 Status: {status_txt}\n"
                 f"📊 Total: `{total_gb:.2f}` GB\n"
                 f"📉 Used: `{used_gb:.2f}` GB\n"
                 f"📈 Remaining: `{remaining_gb:.2f}` GB\n"
