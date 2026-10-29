@@ -828,15 +828,15 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
 </body>
 </html>"""
 
-def render_app_card(name: str, logo_svg: str, url: str, btn_label: str, recommended: bool = False) -> str:
+def render_app_card(name_html: str, logo_svg: str, url: str, btn_label: str, recommended: bool = False) -> str:
     badge = '<span class="absolute top-3 right-3 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/25">پیشنهادی</span>' if recommended else ''
     return f"""
     <div class="surface-card hover-lift p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-between text-center relative border border-slate-200/80 dark:border-zinc-800">
         {badge}
-        <div class="w-12 h-12 rounded-2xl mb-3 flex items-center justify-center p-2.5 bg-slate-100 dark:bg-zinc-800/80 shadow-md mt-2">
+        <div class="w-12 h-12 rounded-2xl mb-3 flex items-center justify-center p-1.5 bg-slate-100 dark:bg-zinc-800/80 shadow-md mt-2">
             {logo_svg}
         </div>
-        <h3 class="font-bold text-sm mb-4">{name}</h3>
+        <h3 class="font-bold text-sm mb-4">{name_html}</h3>
         <a href="{url}" target="_blank" rel="noopener noreferrer" class="btn-press w-full min-h-[42px] inline-flex items-center justify-center bg-[#4b85d1] hover:bg-[#3671bf] text-white rounded-xl text-xs font-bold transition-colors shadow-xs">{btn_label}</a>
     </div>"""
 
@@ -879,50 +879,50 @@ def render_dashboard_html(ctx: dict) -> str:
         streisand_deep = f"streisand://import/{ctx['sub_url']}"
 
         LOGOS = {
-            "hiddify": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1890FF"/><path d="M12 4L4 8.5L12 13L20 8.5L12 4Z" fill="white"/><path d="M4 12L12 16.5L20 12" stroke="white" stroke-width="2" stroke-linecap="round"/><path d="M4 15.5L12 20L20 15.5" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>""",
-            "v2rayng": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1677FF"/><path d="M6 6L12 17L18 6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>""",
-            "singbox": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1E293B"/><rect x="5" y="5" width="14" height="14" rx="3" stroke="#38BDF8" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="#38BDF8"/></svg>""",
-            "nekobox": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#6366F1"/><path d="M6 9L9 6H15L18 9V17C18 17.5 17.5 18 17 18H7C6.5 18 6 17.5 6 17V9Z" stroke="white" stroke-width="2"/><circle cx="10" cy="12" r="1" fill="white"/><circle cx="14" cy="12" r="1" fill="white"/></svg>""",
-            "flclash": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#F43F5E"/><path d="M12 4L19 12L12 20L5 12L12 4Z" stroke="white" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.5" fill="white"/></svg>""",
-            "karing": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#10B981"/><path d="M7 6V18M7 12L15 6M9 10.5L16 18" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>""",
-            "streisand": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#0EA5E9"/><circle cx="12" cy="12" r="6" stroke="white" stroke-width="2"/><path d="M12 3V6M12 18V21M3 12H6M18 12H21" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>""",
-            "shadowrocket": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#0284C7"/><path d="M12 4C12 4 7 8 7 13C7 16 9 18 12 20C15 18 17 16 17 13C17 8 12 4 12 4Z" stroke="white" stroke-width="2"/><circle cx="12" cy="11" r="2" fill="white"/></svg>""",
-            "foxray": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#F97316"/><path d="M6 16L12 8L18 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>""",
-            "clash": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#475569"/><path d="M5 16C5 16 7 19 12 19C17 19 19 16 19 16M12 5V14" stroke="#38BDF8" stroke-width="2" stroke-linecap="round"/></svg>""",
-            "v2rayn": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#2563EB"/><path d="M6 6L12 18L18 6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>"""
+            "hiddify": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#007AFF"/><path d="M50 20C33.43 20 20 33.43 20 50C20 66.57 33.43 80 50 80C66.57 80 80 66.57 80 50C80 33.43 66.57 20 50 20ZM50 30C58.28 30 65 36.72 65 45C65 51.5 60.83 57.06 55 59.1V68H45V59.1C39.17 57.06 35 51.5 35 45C35 36.72 41.72 30 50 30Z" fill="white"/><circle cx="50" cy="45" r="5" fill="#007AFF"/></svg>""",
+            "v2rayng": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#1C1C1E"/><path d="M22 28L44 78H56L78 28H64L50 63L36 28H22Z" fill="#2979FF"/><path d="M22 28L36 28L50 63L44 78L22 28Z" fill="#78909C"/></svg>""",
+            "v2rayn": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#0D47A1"/><path d="M25 25L50 78L75 25H60L50 52L40 25H25Z" fill="white"/></svg>""",
+            "singbox": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#0F172A"/><rect x="25" y="25" width="50" height="50" rx="14" stroke="#38BDF8" stroke-width="8"/><circle cx="50" cy="50" r="10" fill="#38BDF8"/></svg>""",
+            "nekobox": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#6366F1"/><path d="M26 40L38 25H62L74 40V72C74 74.2 72.2 76 70 76H30C27.8 76 26 74.2 26 72V40Z" fill="white"/><ellipse cx="40" cy="52" rx="4" ry="6" fill="#6366F1"/><ellipse cx="60" cy="52" rx="4" ry="6" fill="#6366F1"/><path d="M47 58L50 61L53 58" stroke="#6366F1" stroke-width="3" stroke-linecap="round"/></svg>""",
+            "flclash": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#F43F5E"/><path d="M50 18L80 50L50 82L20 50L50 18Z" stroke="white" stroke-width="9" stroke-linejoin="round"/><circle cx="50" cy="50" r="10" fill="white"/></svg>""",
+            "karing": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#10B981"/><path d="M30 25V75M30 50L68 25M38 44L72 75" stroke="white" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>""",
+            "streisand": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#0284C7"/><circle cx="50" cy="50" r="26" stroke="white" stroke-width="8"/><path d="M50 12V24M50 76V88M12 50H24M76 50H88" stroke="white" stroke-width="8" stroke-linecap="round"/></svg>""",
+            "shadowrocket": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#0284C7"/><path d="M50 18C50 18 30 35 30 54C30 67 39 74 50 82C61 74 70 67 70 54C70 35 50 18 50 18Z" fill="white"/><circle cx="50" cy="46" r="9" fill="#0284C7"/></svg>""",
+            "foxray": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#FF5722"/><path d="M26 72L50 32L74 72" stroke="white" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>""",
+            "clash": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#334155"/><path d="M25 65C25 65 32 78 50 78C68 78 75 65 75 65M50 22V58" stroke="#38BDF8" stroke-width="10" stroke-linecap="round"/></svg>"""
         }
 
         android_apps = "".join([
-            render_app_card("Hiddify", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("v2rayNG", LOGOS["v2rayng"], "https://github.com/2dust/v2rayNG/releases", "دانلود از گیتهاب", True),
-            render_app_card("Flclash", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
-            render_app_card("Karing", LOGOS["karing"], "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
-            render_app_card("Sing-box", LOGOS["singbox"], "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
-            render_app_card("NekoBox", LOGOS["nekobox"], "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Hiddify</span>", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>v2rayNG</span>", LOGOS["v2rayng"], "https://github.com/2dust/v2rayNG/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Flclash</span>", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Karing</span>", LOGOS["karing"], "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Sing-box</span>", LOGOS["singbox"], "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>NekoBox</span>", LOGOS["nekobox"], "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases", "دانلود از گیتهاب", False),
         ])
         ios_apps = "".join([
-            render_app_card("Hiddify", LOGOS["hiddify"], "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532", "دانلود از اپ‌استور", True),
-            render_app_card("Streisand", LOGOS["streisand"], "https://apps.apple.com/us/app/streisand/id6450534064", "دانلود از اپ‌استور", True),
-            render_app_card("Shadowrocket", LOGOS["shadowrocket"], "https://apps.apple.com/us/app/shadowrocket/id932747118", "دانلود از اپ‌استور", True),
-            render_app_card("Karing", LOGOS["karing"], "https://apps.apple.com/us/app/karing/id6472431552", "دانلود از اپ‌استور", False),
-            render_app_card("Sing-box", LOGOS["singbox"], "https://apps.apple.com/us/app/sing-box/id6451272673", "دانلود از اپ‌استور", False),
-            render_app_card("FoXray", LOGOS["foxray"], "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
+            render_app_card("<span class='en-digits'>Hiddify</span>", LOGOS["hiddify"], "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532", "دانلود از اپ‌استور", True),
+            render_app_card("<span class='en-digits'>Streisand</span>", LOGOS["streisand"], "https://apps.apple.com/us/app/streisand/id6450534064", "دانلود از اپ‌استور", True),
+            render_app_card("<span class='en-digits'>Shadowrocket</span>", LOGOS["shadowrocket"], "https://apps.apple.com/us/app/shadowrocket/id932747118", "دانلود از اپ‌استور", True),
+            render_app_card("<span class='en-digits'>Karing</span>", LOGOS["karing"], "https://apps.apple.com/us/app/karing/id6472431552", "دانلود از اپ‌استور", False),
+            render_app_card("<span class='en-digits'>Sing-box</span>", LOGOS["singbox"], "https://apps.apple.com/us/app/sing-box/id6451272673", "دانلود از اپ‌استور", False),
+            render_app_card("<span class='en-digits'>FoXray</span>", LOGOS["foxray"], "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
         ])
         win_apps = "".join([
-            render_app_card("Hiddify", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("v2rayN", LOGOS["v2rayn"], "https://github.com/2dust/v2rayN/releases", "دانلود از گیتهاب", True),
-            render_app_card("Flclash", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
-            render_app_card("Clash Verge", LOGOS["clash"], "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", False),
-            render_app_card("Karing", LOGOS["karing"], "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
-            render_app_card("Nekoray", LOGOS["nekobox"], "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Hiddify</span>", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>v2rayN</span>", LOGOS["v2rayn"], "https://github.com/2dust/v2rayN/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Flclash</span>", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Clash Verge</span>", LOGOS["clash"], "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Karing</span>", LOGOS["karing"], "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Nekoray</span>", LOGOS["nekobox"], "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
         ])
         mac_apps = "".join([
-            render_app_card("Hiddify", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("Clash Verge", LOGOS["clash"], "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", True),
-            render_app_card("Flclash", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
-            render_app_card("Sing-box", LOGOS["singbox"], "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
-            render_app_card("FoXray", LOGOS["foxray"], "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
-            render_app_card("Nekoray", LOGOS["nekobox"], "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Hiddify</span>", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Clash Verge</span>", LOGOS["clash"], "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Flclash</span>", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Sing-box</span>", LOGOS["singbox"], "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>FoXray</span>", LOGOS["foxray"], "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
+            render_app_card("<span class='en-digits'>Nekoray</span>", LOGOS["nekobox"], "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
         ])
 
         main_section = f"""
