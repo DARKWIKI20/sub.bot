@@ -828,13 +828,13 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
 </body>
 </html>"""
 
-def render_app_card(name_html: str, logo_svg: str, url: str, btn_label: str, recommended: bool = False) -> str:
+def render_app_card(name_html: str, logo_html: str, url: str, btn_label: str, recommended: bool = False) -> str:
     badge = '<span class="absolute top-3 right-3 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/25">پیشنهادی</span>' if recommended else ''
     return f"""
     <div class="surface-card hover-lift p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-between text-center relative border border-slate-200/80 dark:border-zinc-800">
         {badge}
-        <div class="w-12 h-12 rounded-2xl mb-3 flex items-center justify-center p-1.5 bg-slate-100 dark:bg-zinc-800/80 shadow-md mt-2">
-            {logo_svg}
+        <div class="w-12 h-12 rounded-2xl mb-3 flex items-center justify-center p-1.5 bg-slate-100 dark:bg-zinc-800/80 shadow-md mt-2 overflow-hidden">
+            {logo_html}
         </div>
         <h3 class="font-bold text-sm mb-4">{name_html}</h3>
         <a href="{url}" target="_blank" rel="noopener noreferrer" class="btn-press w-full min-h-[42px] inline-flex items-center justify-center bg-[#4b85d1] hover:bg-[#3671bf] text-white rounded-xl text-xs font-bold transition-colors shadow-xs">{btn_label}</a>
@@ -879,68 +879,40 @@ def render_dashboard_html(ctx: dict) -> str:
         streisand_deep = f"streisand://import/{ctx['sub_url']}"
 
         # لوگوهای رسمی، واقعی و اورجینال برنامه‌ها
+        # لوگوهای رسمی، شفاف و اصلی نرم‌افزارها برگرفته از سورس رسمی پروژه‌ها
         LOGOS = {
-            "v2rayng": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
-                <path d="M12 8H35V17H22V48L53 17H78L35 60V92H22V63L12 53V8Z" fill="currentColor" class="text-slate-900 dark:text-white"/>
-                <path d="M78 8L35 52L22 39L53 8H78Z" fill="currentColor" class="text-slate-900 dark:text-white"/>
-            </svg>""",
-            "hiddify": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
-                <rect width="100" height="100" rx="22" fill="#007AFF"/>
-                <path d="M50 20C33.43 20 20 33.43 20 50C20 66.57 33.43 80 50 80C66.57 80 80 66.57 80 50C80 33.43 66.57 20 50 20ZM50 30C58.28 30 65 36.72 65 45C65 51.5 60.83 57.06 55 59.1V68H45V59.1C39.17 57.06 35 51.5 35 45C35 36.72 41.72 30 50 30Z" fill="white"/>
-                <circle cx="50" cy="45" r="5" fill="#007AFF"/>
-            </svg>""",
-            "singbox": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
-                <rect width="100" height="100" rx="22" fill="#0F172A"/>
-                <path d="M50 20L80 37V67L50 84L20 67V37L50 20Z" stroke="#38BDF8" stroke-width="6" stroke-linejoin="round"/>
-                <path d="M50 20V52M80 67L50 52M20 67L50 52" stroke="#38BDF8" stroke-width="6" stroke-linejoin="round"/>
-                <circle cx="50" cy="52" r="5" fill="#38BDF8"/>
-            </svg>""",
-            "nekobox": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
-                <rect width="100" height="100" rx="22" fill="#6366F1"/>
-                <path d="M22 38L34 22H66L78 38V72C78 75.3 75.3 78 72 78H28C24.7 78 22 75.3 22 72V38Z" fill="white"/>
-                <circle cx="38" cy="50" r="5" fill="#6366F1"/>
-                <circle cx="62" cy="50" r="5" fill="#6366F1"/>
-                <path d="M46 58C48 61 52 61 54 58" stroke="#6366F1" stroke-width="4" stroke-linecap="round"/>
-                <path d="M30 62L16 58M30 66L14 68M70 62L84 58M70 66L86 68" stroke="white" stroke-width="4" stroke-linecap="round"/>
-            </svg>""",
-            "flclash": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
-                <rect width="100" height="100" rx="22" fill="#FF4757"/>
-                <path d="M50 16L82 48L50 80L18 48L50 16Z" fill="white"/>
-                <path d="M50 28L70 48L50 68L30 48L50 28Z" fill="#FF4757"/>
-                <circle cx="50" cy="48" r="6" fill="white"/>
-            </svg>""",
-            "karing": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
-                <rect width="100" height="100" rx="22" fill="#10B981"/>
-                <path d="M28 22V78M28 50L68 22M38 44L72 78" stroke="white" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>""",
-            "streisand": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
-                <rect width="100" height="100" rx="22" fill="#0284C7"/>
-                <circle cx="50" cy="50" r="26" stroke="white" stroke-width="8"/>
-                <circle cx="50" cy="50" r="14" stroke="white" stroke-width="6"/>
-                <circle cx="50" cy="50" r="4" fill="white"/>
-                <path d="M50 12V24M50 76V88M12 50H24M76 50H88" stroke="white" stroke-width="8" stroke-linecap="round"/>
-            </svg>""",
-            "shadowrocket": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
-                <rect width="100" height="100" rx="22" fill="#007AFF"/>
-                <path d="M50 16C50 16 32 34 32 54C32 68 40 76 50 84C60 76 68 68 68 54C68 34 50 16 50 16Z" fill="white"/>
-                <circle cx="50" cy="46" r="8" fill="#007AFF"/>
-                <path d="M26 62L34 58M74 62L66 58" stroke="white" stroke-width="6" stroke-linecap="round"/>
-            </svg>""",
-            "foxray": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
-                <rect width="100" height="100" rx="22" fill="#FF6B00"/>
-                <path d="M20 30L38 74L50 60L62 74L80 30L50 48L20 30Z" fill="white"/>
-            </svg>""",
-            "clash": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
-                <rect width="100" height="100" rx="22" fill="#3B4252"/>
-                <path d="M28 62C28 62 36 74 50 74C64 74 72 62 72 62" stroke="#88C0D0" stroke-width="8" stroke-linecap="round"/>
-                <circle cx="36" cy="46" r="6" fill="#ECEFF4"/>
-                <circle cx="64" cy="46" r="6" fill="#ECEFF4"/>
-                <path d="M50 20V40M40 24L50 40M60 24L50 40" stroke="#88C0D0" stroke-width="6" stroke-linecap="round"/>
-            </svg>""",
-            "v2rayn": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
-                <rect width="100" height="100" rx="22" fill="#0052CC"/>
-                <path d="M20 25L50 80L80 25H62L50 54L38 25H20Z" fill="white"/>
-            </svg>"""
+            # لوگوی رسمی Hiddify
+            "hiddify": '<img src="https://raw.githubusercontent.com/hiddify/hiddify-next/main/assets/images/logo.png" class="w-full h-full object-contain rounded-xl" alt="Hiddify" loading="lazy" onerror="this.src=\'https://assets.stickpng.com/images/5842a8fbaae524100faad033.png\'">',
+            
+            # لوگوی رسمی v2rayNG (پروژه 2dust)
+            "v2rayng": '<img src="https://raw.githubusercontent.com/2dust/v2rayNG/master/V2rayNG/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" class="w-full h-full object-contain rounded-xl" alt="v2rayNG" loading="lazy">',
+            
+            # لوگوی رسمی v2rayN ویندوز
+            "v2rayn": '<img src="https://raw.githubusercontent.com/2dust/v2rayN/master/v2rayN/v2rayN/v2rayN.ico" class="w-full h-full object-contain rounded-xl" alt="v2rayN" loading="lazy">',
+            
+            # لوگوی رسمی Sing-box
+            "singbox": '<img src="https://raw.githubusercontent.com/SagerNet/sing-box/dev/docs/assets/logo.png" class="w-full h-full object-contain rounded-xl" alt="Sing-box" loading="lazy">',
+            
+            # لوگوی گربه رسمی NekoBox / NekoRay
+            "nekobox": '<img src="https://raw.githubusercontent.com/MatsuriDayo/NekoBoxForAndroid/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" class="w-full h-full object-contain rounded-xl" alt="NekoBox" loading="lazy">',
+            
+            # لوگوی رسمی FlClash
+            "flclash": '<img src="https://raw.githubusercontent.com/chen08209/FlClash/main/assets/images/icon.png" class="w-full h-full object-contain rounded-xl" alt="FlClash" loading="lazy">',
+            
+            # لوگوی رسمی Karing
+            "karing": '<img src="https://raw.githubusercontent.com/KaringX/karing/main/assets/logo.png" class="w-full h-full object-contain rounded-xl" alt="Karing" loading="lazy">',
+            
+            # لوگوی رسمی Clash Verge Rev
+            "clash": '<img src="https://raw.githubusercontent.com/clash-verge-rev/clash-verge-rev/main/src-tauri/icons/128x128.png" class="w-full h-full object-contain rounded-xl" alt="Clash Verge" loading="lazy">',
+            
+            # لوگوی موشک رسمی Shadowrocket (اپ استور)
+            "shadowrocket": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/71/39/10/713910db-df3e-7935-7c15-46f9aeec6ea2/AppIcon-0-0-1x_U007emarketing-0-7-0-sRGB-85-220.png/256x256bb.jpg" class="w-full h-full object-contain rounded-xl" alt="Shadowrocket" loading="lazy">',
+            
+            # لوگوی رسمی Streisand
+            "streisand": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/7e/e1/99/7ee19946-b6ae-222a-2f47-a16f2bfafe22/AppIcon-0-0-1x_U007emarketing-0-7-0-sRGB-85-220.png/256x256bb.jpg" class="w-full h-full object-contain rounded-xl" alt="Streisand" loading="lazy">',
+            
+            # لوگوی روباه رسمی FoXray
+            "foxray": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/44/1a/05/441a052e-c5db-fa9b-0062-eeff039efcbb/AppIcon-0-0-1x_U007emarketing-0-7-0-sRGB-85-220.png/256x256bb.jpg" class="w-full h-full object-contain rounded-xl" alt="FoXray" loading="lazy">'
         }
 
         # اسامی انگلیسی با کلاس en-digits برای انگلیسی ماندن عدد 2
