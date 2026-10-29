@@ -40,7 +40,7 @@ sub_cache = {}
 login_attempts = {}
 http_client: httpx.AsyncClient = None
 
-# ----------------- دیتابیس با قابلیت WAL -----------------
+# ----------------- دیتابیس -----------------
 def get_db():
     conn = sqlite3.connect(DB_FILE, timeout=10.0)
     conn.row_factory = sqlite3.Row
@@ -81,7 +81,7 @@ def init_db():
 
 init_db()
 
-# ----------------- چرخه حیات سراسری -----------------
+# ----------------- چرخه حیات و مدیریت شبکه -----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global http_client
@@ -358,11 +358,10 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- انیمیشن‌های حرفه‌ای (Emil Kowalski Philosophy) -----------------
+# ----------------- سیستم طراحی و انیمیشن -----------------
 ANIMATED_DESIGN_SYSTEM_CSS = """
 :root {
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
     --duration-snappy: 160ms;
     --duration-flow: 240ms;
     --duration-enter: 320ms;
@@ -395,7 +394,6 @@ body {
     color: var(--text-primary);
 }
 
-/* اسکرول‌بار شیشه‌ای و بدون پس‌زمینه سفید */
 * {
     scrollbar-width: thin;
     scrollbar-color: rgba(75, 133, 209, 0.35) transparent;
@@ -406,7 +404,6 @@ body {
 ::-webkit-scrollbar-thumb:hover { background: rgba(75, 133, 209, 0.8); }
 ::-webkit-scrollbar-button { display: none !important; }
 
-/* موتور انیمیشن ورود (بدون scale(0) با شتاب‌گیری GPU) */
 @keyframes emilEnter {
     from {
         opacity: 0;
@@ -422,13 +419,11 @@ body {
     animation: emilEnter var(--duration-enter) var(--ease-out) both;
 }
 
-/* تاخیر ورود گام‌به‌گام (Staggered Children) */
 .stagger-1 { animation-delay: 40ms; }
 .stagger-2 { animation-delay: 80ms; }
 .stagger-3 { animation-delay: 120ms; }
 .stagger-4 { animation-delay: 160ms; }
 
-/* بازخورد لمسی دقیق برای دکمه‌ها (Button Press Feedback) */
 .btn-press {
     transition: transform var(--duration-snappy) var(--ease-out), opacity var(--duration-snappy) var(--ease-out);
     will-change: transform;
@@ -447,7 +442,6 @@ body {
     }
 }
 
-/* احترام کامل به Reduced Motion */
 @media (prefers-reduced-motion: reduce) {
     .animate-enter, .btn-press, .hover-lift {
         animation: none !important;
@@ -790,24 +784,24 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
     <div id="adminToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-5 py-3 rounded-2xl bg-white text-slate-900 text-xs font-bold shadow-2xl animate-enter"></div>
 
     <script>
-        function copyText(txt, msg) {{
+        function copyText(txt, msg) {
             navigator.clipboard.writeText(txt);
             const t = document.getElementById('adminToast');
             t.textContent = msg;
             t.classList.remove('hidden');
             setTimeout(() => t.classList.add('hidden'), 2000);
-        }}
-        function openQR(url, title) {{
+        }
+        function openQR(url, title) {
             document.getElementById('adminQrTitle').textContent = 'کد QR اشتراک: ' + title;
             document.getElementById('adminQrImg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=' + encodeURIComponent(url);
             document.getElementById('adminQrModal').classList.remove('hidden');
             document.getElementById('adminQrModal').classList.add('flex');
-        }}
-        function closeAdminQR() {{
+        }
+        function closeAdminQR() {
             document.getElementById('adminQrModal').classList.add('hidden');
             document.getElementById('adminQrModal').classList.remove('flex');
-        }}
-        function openEditModal(profile) {{
+        }
+        function openEditModal(profile) {
             document.getElementById('editForm').action = '/admin/profiles/' + encodeURIComponent(profile.token) + '/edit';
             document.getElementById('edit_name').value = profile.name;
             document.getElementById('edit_upstream').value = profile.upstream_url;
@@ -816,47 +810,35 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             document.getElementById('edit_note').value = profile.admin_note || '';
             document.getElementById('editModal').classList.remove('hidden');
             document.getElementById('editModal').classList.add('flex');
-        }}
-        function closeEditModal() {{
+        }
+        function closeEditModal() {
             document.getElementById('editModal').classList.add('hidden');
             document.getElementById('editModal').classList.remove('flex');
-        }}
-        function filterTable() {{
+        }
+        function filterTable() {
             const q = document.getElementById('searchInput').value.toLowerCase();
             const st = document.getElementById('statusFilter').value;
-            document.querySelectorAll('.profile-row').forEach(row => {{
+            document.querySelectorAll('.profile-row').forEach(row => {
                 const matchName = row.getAttribute('data-name').includes(q);
                 const matchStatus = (st === 'all') || (row.getAttribute('data-status') === st);
                 row.style.display = (matchName && matchStatus) ? '' : 'none';
-            }});
-        }}
+            });
+        }
     </script>
 </body>
 </html>"""
 
-# کارت‌های اپلیکیشن با آیکون‌های وکتور بدون قطعی
 def render_app_card(name: str, logo_svg: str, url: str, btn_label: str, recommended: bool = False) -> str:
     badge = '<span class="absolute top-3 right-3 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/25">پیشنهادی</span>' if recommended else ''
     return f"""
-    <div class="surface-card hover-lift p-5 rounded-2xl flex flex-col items-center justify-between text-center relative border border-slate-200/80 dark:border-zinc-800">
+    <div class="surface-card hover-lift p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-between text-center relative border border-slate-200/80 dark:border-zinc-800">
         {badge}
-        <div class="w-12 h-12 rounded-2xl mb-3 flex items-center justify-center bg-zinc-800/10 dark:bg-zinc-800/60 shadow-md mt-2 text-[#4b85d1]">
+        <div class="w-12 h-12 rounded-2xl mb-3 flex items-center justify-center p-2.5 bg-slate-100 dark:bg-zinc-800/80 shadow-md mt-2">
             {logo_svg}
         </div>
         <h3 class="font-bold text-sm mb-4">{name}</h3>
         <a href="{url}" target="_blank" rel="noopener noreferrer" class="btn-press w-full min-h-[42px] inline-flex items-center justify-center bg-[#4b85d1] hover:bg-[#3671bf] text-white rounded-xl text-xs font-bold transition-colors shadow-xs">{btn_label}</a>
     </div>"""
-
-# آیکون‌های SVG دائمی و پایدار برای تمام اپلیکیشن‌ها
-SVG_ICONS = {
-    "hiddify": """<svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"></path><path d="M2 17l10 5 10-5"></path><path d="M2 12l10 5 10-5"></path></svg>""",
-    "v2rayng": """<svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>""",
-    "singbox": """<svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="4"></rect><path d="M9 12h6"></path><path d="M12 9v6"></path></svg>""",
-    "nekobox": """<svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path><polyline points="22,6 12,13 2,6"></polyline></svg>""",
-    "streisand": """<svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="m4.93 4.93 4.24 4.24"></path><path d="m14.83 9.17 4.24-4.24"></path><path d="m14.83 14.83 4.24 4.24"></path><path d="m9.17 14.83-4.24 4.24"></path></svg>""",
-    "foxray": """<svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"></circle><path d="m9 12 2 2 4-4"></path></svg>""",
-    "clash": """<svg class="w-7 h-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path></svg>"""
-}
 
 def render_dashboard_html(ctx: dict) -> str:
     safe_brand = html.escape(ctx["brand_name"])
@@ -891,34 +873,56 @@ def render_dashboard_html(ctx: dict) -> str:
             </div>"""
 
         encoded_sub_url = urllib.parse.quote(ctx["sub_url"], safe="")
-        hiddify_deep = f"hiddify://import/{ctx['sub_url']}#{ urllib.parse.quote(ctx['brand_name']) }"
+        hiddify_deep = f"hiddify://import/{ctx['sub_url']}#{urllib.parse.quote(ctx['brand_name'])}"
         v2rayng_deep = f"v2rayng://install-sub?url={encoded_sub_url}&name={urllib.parse.quote(ctx['brand_name'])}"
         singbox_deep = f"sing-box://import-remote-profile?url={encoded_sub_url}#{urllib.parse.quote(ctx['brand_name'])}"
         streisand_deep = f"streisand://import/{ctx['sub_url']}"
 
+        LOGOS = {
+            "hiddify": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1890FF"/><path d="M12 4L4 8.5L12 13L20 8.5L12 4Z" fill="white"/><path d="M4 12L12 16.5L20 12" stroke="white" stroke-width="2" stroke-linecap="round"/><path d="M4 15.5L12 20L20 15.5" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>""",
+            "v2rayng": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1677FF"/><path d="M6 6L12 17L18 6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>""",
+            "singbox": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#1E293B"/><rect x="5" y="5" width="14" height="14" rx="3" stroke="#38BDF8" stroke-width="2"/><circle cx="12" cy="12" r="3" fill="#38BDF8"/></svg>""",
+            "nekobox": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#6366F1"/><path d="M6 9L9 6H15L18 9V17C18 17.5 17.5 18 17 18H7C6.5 18 6 17.5 6 17V9Z" stroke="white" stroke-width="2"/><circle cx="10" cy="12" r="1" fill="white"/><circle cx="14" cy="12" r="1" fill="white"/></svg>""",
+            "flclash": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#F43F5E"/><path d="M12 4L19 12L12 20L5 12L12 4Z" stroke="white" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12" r="2.5" fill="white"/></svg>""",
+            "karing": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#10B981"/><path d="M7 6V18M7 12L15 6M9 10.5L16 18" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>""",
+            "streisand": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#0EA5E9"/><circle cx="12" cy="12" r="6" stroke="white" stroke-width="2"/><path d="M12 3V6M12 18V21M3 12H6M18 12H21" stroke="white" stroke-width="2" stroke-linecap="round"/></svg>""",
+            "shadowrocket": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#0284C7"/><path d="M12 4C12 4 7 8 7 13C7 16 9 18 12 20C15 18 17 16 17 13C17 8 12 4 12 4Z" stroke="white" stroke-width="2"/><circle cx="12" cy="11" r="2" fill="white"/></svg>""",
+            "foxray": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#F97316"/><path d="M6 16L12 8L18 16" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>""",
+            "clash": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#475569"/><path d="M5 16C5 16 7 19 12 19C17 19 19 16 19 16M12 5V14" stroke="#38BDF8" stroke-width="2" stroke-linecap="round"/></svg>""",
+            "v2rayn": """<svg class="w-full h-full" viewBox="0 0 24 24" fill="none"><rect width="24" height="24" rx="6" fill="#2563EB"/><path d="M6 6L12 18L18 6" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>"""
+        }
+
         android_apps = "".join([
-            render_app_card("Hiddify", SVG_ICONS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("v2rayNG", SVG_ICONS["v2rayng"], "https://github.com/2dust/v2rayNG/releases", "دانلود از گیتهاب", True),
-            render_app_card("Sing-box", SVG_ICONS["singbox"], "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
-            render_app_card("NekoBox", SVG_ICONS["nekobox"], "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases", "دانلود از گیتهاب", False),
+            render_app_card("Hiddify", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
+            render_app_card("v2rayNG", LOGOS["v2rayng"], "https://github.com/2dust/v2rayNG/releases", "دانلود از گیتهاب", True),
+            render_app_card("Flclash", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
+            render_app_card("Karing", LOGOS["karing"], "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
+            render_app_card("Sing-box", LOGOS["singbox"], "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
+            render_app_card("NekoBox", LOGOS["nekobox"], "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases", "دانلود از گیتهاب", False),
         ])
         ios_apps = "".join([
-            render_app_card("Hiddify", SVG_ICONS["hiddify"], "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532", "دانلود از اپ‌استور", True),
-            render_app_card("Streisand", SVG_ICONS["streisand"], "https://apps.apple.com/us/app/streisand/id6450534064", "دانلود از اپ‌استور", True),
-            render_app_card("Sing-box", SVG_ICONS["singbox"], "https://apps.apple.com/us/app/sing-box/id6451272673", "دانلود از اپ‌استور", False),
-            render_app_card("FoXray", SVG_ICONS["foxray"], "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
+            render_app_card("Hiddify", LOGOS["hiddify"], "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532", "دانلود از اپ‌استور", True),
+            render_app_card("Streisand", LOGOS["streisand"], "https://apps.apple.com/us/app/streisand/id6450534064", "دانلود از اپ‌استور", True),
+            render_app_card("Shadowrocket", LOGOS["shadowrocket"], "https://apps.apple.com/us/app/shadowrocket/id932747118", "دانلود از اپ‌استور", True),
+            render_app_card("Karing", LOGOS["karing"], "https://apps.apple.com/us/app/karing/id6472431552", "دانلود از اپ‌استور", False),
+            render_app_card("Sing-box", LOGOS["singbox"], "https://apps.apple.com/us/app/sing-box/id6451272673", "دانلود از اپ‌استور", False),
+            render_app_card("FoXray", LOGOS["foxray"], "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
         ])
         win_apps = "".join([
-            render_app_card("Hiddify", SVG_ICONS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("v2rayN", SVG_ICONS["v2rayng"], "https://github.com/2dust/v2rayN/releases", "دانلود از گیتهاب", True),
-            render_app_card("Clash Verge", SVG_ICONS["clash"], "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", False),
-            render_app_card("Nekoray", SVG_ICONS["nekobox"], "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
+            render_app_card("Hiddify", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
+            render_app_card("v2rayN", LOGOS["v2rayn"], "https://github.com/2dust/v2rayN/releases", "دانلود از گیتهاب", True),
+            render_app_card("Flclash", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
+            render_app_card("Clash Verge", LOGOS["clash"], "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", False),
+            render_app_card("Karing", LOGOS["karing"], "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
+            render_app_card("Nekoray", LOGOS["nekobox"], "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
         ])
         mac_apps = "".join([
-            render_app_card("Hiddify", SVG_ICONS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("Clash Verge", SVG_ICONS["clash"], "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", True),
-            render_app_card("Sing-box", SVG_ICONS["singbox"], "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
-            render_app_card("Nekoray", SVG_ICONS["nekobox"], "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
+            render_app_card("Hiddify", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
+            render_app_card("Clash Verge", LOGOS["clash"], "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", True),
+            render_app_card("Flclash", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
+            render_app_card("Sing-box", LOGOS["singbox"], "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
+            render_app_card("FoXray", LOGOS["foxray"], "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
+            render_app_card("Nekoray", LOGOS["nekobox"], "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
         ])
 
         main_section = f"""
@@ -1049,7 +1053,6 @@ def render_dashboard_html(ctx: dict) -> str:
                     </div>
                 </div>
 
-                <!-- لیست کانفیگ‌ها با اسکرول‌بار بدون پس‌زمینه سفید -->
                 <div class="max-h-[440px] overflow-y-auto space-y-2.5 pl-1 pr-0.5"[cite: 1]>
                     {conf_items}
                 </div>
@@ -1072,10 +1075,10 @@ def render_dashboard_html(ctx: dict) -> str:
                 <button type="button" onclick="switchTab('mac_linux')" id="tab-btn-mac_linux" class="tab-button btn-press text-xs sm:text-sm cursor-pointer">مک / لینوکس</button>
             </div>
 
-            <div id="tab-android" class="platform-tab-content grid grid-cols-2 sm:grid-cols-4 gap-3.5 animate-enter">{android_apps}</div>
-            <div id="tab-ios" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-4 gap-3.5 animate-enter">{ios_apps}</div>
-            <div id="tab-windows" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-4 gap-3.5 animate-enter">{win_apps}</div>
-            <div id="tab-mac_linux" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-4 gap-3.5 animate-enter">{mac_apps}</div>
+            <div id="tab-android" class="platform-tab-content grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 animate-enter">{android_apps}</div>
+            <div id="tab-ios" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 animate-enter">{ios_apps}</div>
+            <div id="tab-windows" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 animate-enter">{win_apps}</div>
+            <div id="tab-mac_linux" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 animate-enter">{mac_apps}</div>
         </div>
         """
 
@@ -1144,72 +1147,72 @@ def render_dashboard_html(ctx: dict) -> str:
         const allConfigs = {ctx['configs_json']};
         const checkSvg = '<svg class="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
-        function switchTab(platform) {{
-            document.querySelectorAll('.platform-tab-content').forEach(el => {{
+        function switchTab(platform) {
+            document.querySelectorAll('.platform-tab-content').forEach(el => {
                 el.classList.add('hidden');
                 el.classList.remove('animate-enter');
-            }});
+            });
             document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
             
             const target = document.getElementById('tab-' + platform);
             const btn = document.getElementById('tab-btn-' + platform);
-            if (target) {{
+            if (target) {
                 target.classList.remove('hidden');
                 void target.offsetWidth;
                 target.classList.add('animate-enter');
-            }}
+            }
             if (btn) btn.classList.add('active');
-        }}
+        }
 
-        function filterConfigs() {{
+        function filterConfigs() {
             const q = document.getElementById('confSearch').value.toLowerCase();
-            document.querySelectorAll('.config-item').forEach(el => {{
+            document.querySelectorAll('.config-item').forEach(el => {
                 el.style.display = el.getAttribute('data-confname').includes(q) ? '' : 'none';
-            }});
-        }}
+            });
+        }
 
-        function showToast(msg) {{
+        function showToast(msg) {
             const box = document.getElementById("toastBox");
             box.textContent = msg;
             box.classList.remove("hidden");
             setTimeout(() => box.classList.add("hidden"), 2000);
-        }}
+        }
 
-        function animateCopyBtn(btn) {{
+        function animateCopyBtn(btn) {
             if (!btn) return;
             const orig = btn.innerHTML;
             btn.innerHTML = checkSvg;
-            setTimeout(() => {{ btn.innerHTML = orig; }}, 1200);
-        }}
+            setTimeout(() => { btn.innerHTML = orig; }, 1200);
+        }
 
-        function copySubUrl(btn) {{
+        function copySubUrl(btn) {
             navigator.clipboard.writeText(subUrl);
             animateCopyBtn(btn);
             showToast("لینک اشتراک کپی شد!");
-        }}
-        function copyConfig(idx, btn) {{
+        }
+        function copyConfig(idx, btn) {
             navigator.clipboard.writeText(allConfigs[idx]);
             animateCopyBtn(btn);
             showToast("کانفیگ کپی شد!");
-        }}
-        function copyAll(btn) {{
-            if (allConfigs.length > 0) {{
+        }
+        function copyAll(btn) {
+            if (allConfigs.length > 0) {
                 navigator.clipboard.writeText(allConfigs.join("\\n"));
                 showToast("تمام کانفیگ‌ها کپی شدند!");
-            }}
-        }}
+            }
+        }
 
-        function openQRModal(text) {{
+        function openQRModal(text) {
             document.getElementById("qrImage").src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" + encodeURIComponent(text);
             document.getElementById("qrModal").classList.remove("hidden");
             document.getElementById("qrModal").classList.add("flex");
-        }}
-        function showSubQR() {{ openQRModal(subUrl); }}
-        function showConfigQR(idx) {{ openQRModal(allConfigs[idx]); }}
-        function closeQR() {{
+        }
+        function showSubQR() { openQRModal(subUrl); }
+        function showConfigQR(idx) { openQRModal(allConfigs[idx]); }
+        function closeQR() {
             document.getElementById("qrModal").classList.add("hidden");
             document.getElementById("qrModal").classList.remove("flex");
-        }}
+        }
     </script>
 </body>
 </html>"""
