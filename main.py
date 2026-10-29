@@ -10,7 +10,8 @@ import html
 import socket
 import ipaddress
 import urllib.parse
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request, HTTPException, status
@@ -196,6 +197,34 @@ PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 def to_persian_num(s: str) -> str:
     return str(s).translate(PERSIAN_DIGITS)
 
+def parse_datetime_to_timestamp(val) -> float:
+    if not val:
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    val_str = str(val).strip()
+    try:
+        return float(val_str)
+    except ValueError:
+        pass
+
+    try:
+        clean_iso = val_str.replace("Z", "+00:00")
+        dt = datetime.fromisoformat(clean_iso)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.timestamp()
+    except Exception:
+        pass
+
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S"):
+        try:
+            dt = datetime.strptime(val_str, fmt).replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except Exception:
+            continue
+    return 0.0
+
 def format_relative_time(past_timestamp: float) -> str:
     try:
         diff = int(time.time() - past_timestamp)
@@ -266,20 +295,77 @@ def parse_user_info(header_val: str, all_headers: dict = None) -> dict:
 
     return data
 
+async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
+    """
+    استخراج مستقیم وضعیت اتصال از API مرزبان (/info) یا ساختار صفحه وب
+    """
+    try:
+        clean_url = upstream_url.rstrip("/")
+        # ۱. فراخوانی اندپوینت info در پنل مرزبان
+        try:
+            res_info = await http_client.get(
+                f"{clean_url}/info",
+                headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+                timeout=5.0
+            )
+            if res_info.status_code == 200:
+                data = res_info.json()
+                if isinstance(data, dict):
+                    online_val = data.get("online_at") or data.get("last_online") or data.get("last_use")
+                    if online_val:
+                        ts = parse_datetime_to_timestamp(online_val)
+                        if ts > 0:
+                            diff = time.time() - ts
+                            if 0 <= diff <= 180:
+                                return True, "روشن و در حال استفاده"
+                            return False, format_relative_time(ts)
+                    if data.get("is_online") is True or str(data.get("status", "")).lower() == "online":
+                        return True, "روشن و در حال استفاده"
+        except Exception:
+            pass
+
+        # ۲. اسکن تگ‌های اسکریپت یا جیسون موجود در خود HTML مرزبان
+        try:
+            res_html = await http_client.get(
+                upstream_url,
+                headers={
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                },
+                timeout=5.0
+            )
+            if res_html.status_code == 200:
+                html_text = res_html.text
+                match_online = re.search(r'"online_at"\s*:\s*"([^"]+)"', html_text)
+                if not match_online:
+                    match_online = re.search(r'"(?:last_online|last_use|online_at)"\s*:\s*([0-9]+(?:\.[0-9]+)?)', html_text)
+                
+                if match_online:
+                    ts = parse_datetime_to_timestamp(match_online.group(1))
+                    if ts > 0:
+                        diff = time.time() - ts
+                        if 0 <= diff <= 180:
+                            return True, "روشن و در حال استفاده"
+                        return False, format_relative_time(ts)
+        except Exception:
+            pass
+
+    except Exception:
+        pass
+
+    return False, "نامشخص"
+
 def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
     try:
         now = time.time()
         for key in ("last_online", "last-online", "last_use", "last-use", "online_at"):
             if key in info:
-                val = info[key]
-                try:
-                    ts = float(val)
+                ts = parse_datetime_to_timestamp(info[key])
+                if ts > 0:
                     diff = now - ts
                     if 0 <= diff <= 180:
                         return True, "روشن و در حال استفاده"
                     return False, format_relative_time(ts)
-                except Exception:
-                    pass
 
         for c in configs:
             name_lower = str(c.get("name", "")).lower()
@@ -400,7 +486,11 @@ async def get_cached_sub_data(token: str, upstream_url: str):
     
     configs, encoded_sub = parse_and_modify_configs(raw_text)
     info = parse_user_info(resp_headers.get("subscription-userinfo", ""), resp_headers)
-    is_online, last_seen_text = extract_online_status(info, configs)
+    
+    # دریافت وضعیت اتصال
+    is_online, last_seen_text = await fetch_upstream_online_status(upstream_url)
+    if not is_online and last_seen_text == "نامشخص":
+        is_online, last_seen_text = extract_online_status(info, configs)
 
     data = {
         "configs": configs,
