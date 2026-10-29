@@ -13,7 +13,7 @@ import urllib.parse
 from datetime import datetime
 from contextlib import asynccontextmanager
 import httpx
-from fastapi import FastAPI, Request, HTTPException, status, UploadFile, File, Form
+from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import Response, HTMLResponse, RedirectResponse, JSONResponse
 from fastapi.middleware.gzip import GZipMiddleware
 
@@ -33,7 +33,7 @@ TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 CACHE_TTL = int(os.getenv("CACHE_TTL", "120"))
 MAX_CACHE_SIZE = 200
-MAX_REQUEST_BODY = 65536
+MAX_REQUEST_BODY = 1048576  # افزایش سقف برای خواندن فایل‌های بکاپ بزرگتر
 MAX_UPSTREAM_BYTES = 2097152
 
 sub_cache = {}
@@ -252,7 +252,6 @@ def parse_user_info(header_val: str, all_headers: dict = None) -> dict:
                 except ValueError:
                     data[k_clean] = v_clean
 
-    # بررسی هدرهای مرسوم پنل‌های مختلف برای پیدا کردن آخرین استفاده
     if all_headers:
         for possible_key in ("last-online", "x-last-online", "last-use", "online-status", "status"):
             if possible_key in all_headers and possible_key not in data:
@@ -265,25 +264,19 @@ def parse_user_info(header_val: str, all_headers: dict = None) -> dict:
     return data
 
 def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
-    """
-    بررسی وضعیت زنده بودن و محاسبه دقیق آخرین اتصال بر حسب ثانیه/دقیقه/ساعت/روز/هفته
-    """
     now = time.time()
-    
-    # 1. جستجو در کلیدهای استخراج‌شده از هدر
     for key in ("last_online", "last-online", "last_use", "last-use", "online_at"):
         if key in info:
             val = info[key]
             try:
                 ts = float(val)
                 diff = now - ts
-                if 0 <= diff <= 180:  # کمتر از ۳ دقیقه = در حال استفاده
+                if 0 <= diff <= 180:
                     return True, "روشن و در حال استفاده"
                 return False, format_relative_time(ts)
             except Exception:
                 pass
 
-    # 2. بررسی خطوط عنوان یا تگ‌هایی که بعضی پنل‌ها درون نام کانفیگ‌ها تزریق می‌کنند
     for c in configs:
         name_lower = c["name"].lower()
         if "online" in name_lower or "متصل" in name_lower:
@@ -291,8 +284,7 @@ def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
         if "آخرین اتصال" in name_lower or "last seen" in name_lower:
             return False, c["name"].replace("آخرین اتصال:", "").strip()
 
-    # 3. در صورت نبود داده صریح
-    return False, "عدم پشتیبانی توسط سرور مبدا"
+    return False, "نامشخص در لینک اصلی"
 
 def apply_fake_traffic(upload: int, download: int, total: int, fake_total_gb: float) -> tuple[int, int, int]:
     if not fake_total_gb or fake_total_gb <= 0:
@@ -580,14 +572,12 @@ def render_login_html(error: str = None) -> str:
 </body>
 </html>"""
 
-def render_admin_html(profiles, domain: str, csrf_token: str, alert_msg: str = None) -> str:
+def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
     total_count = len(profiles)
     blocked_count = sum(1 for p in profiles if p["is_blocked"])
     active_count = total_count - blocked_count
     total_hits = sum((p["sub_hits"] or 0) for p in profiles)
     cached_items = len(sub_cache)
-
-    alert_box = f'<div class="p-4 mb-4 rounded-2xl bg-blue-500/10 border border-blue-500/20 text-[#4b85d1] text-xs font-bold text-center animate-enter">{html.escape(alert_msg)}</div>' if alert_msg else ""
 
     rows = ""
     for p in profiles:
@@ -605,12 +595,11 @@ def render_admin_html(profiles, domain: str, csrf_token: str, alert_msg: str = N
             u, d, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_val)
             traffic_badge = f"<span class='text-xs font-mono text-emerald-400' dir='ltr'>{format_bytes(u+d)} / {format_bytes(tot)}</span>"
             
-            # نشان وضعیت اتصال
             if cached_data.get("is_online"):
-                online_badge = '<span class="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-400"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>آنلاین</span>'
+                online_badge = '<span class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>آنلاین</span>'
             else:
                 last_s = cached_data.get("last_seen_text", "نامشخص")
-                online_badge = f'<span class="text-[11px] text-slate-400">{last_s}</span>'
+                online_badge = f'<span class="text-xs text-slate-400">{last_s}</span>'
         else:
             traffic_badge = "<span class='text-[11px] text-slate-500'>آماده همگام‌سازی</span>"
             online_badge = "<span class='text-[11px] text-slate-500'>نامشخص</span>"
@@ -699,7 +688,6 @@ def render_admin_html(profiles, domain: str, csrf_token: str, alert_msg: str = N
 </head>
 <body class="min-h-screen p-4 sm:p-6 lg:p-8 flex flex-col justify-between">
     <main class="max-w-7xl w-full mx-auto space-y-6 animate-enter">
-        {alert_box}
         <header class="flex flex-wrap justify-between items-center gap-4 surface-card p-6 rounded-3xl">
             <div class="flex items-center gap-3.5">
                 <div class="w-12 h-12 rounded-2xl bg-[#4b85d1]/15 border border-[#4b85d1]/30 flex items-center justify-center text-[#4b85d1]">
@@ -716,7 +704,6 @@ def render_admin_html(profiles, domain: str, csrf_token: str, alert_msg: str = N
                     <button type="submit" class="btn-press min-h-[42px] px-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-xs font-bold transition-colors cursor-pointer">پاکسازی کل کش ({cached_items})</button>
                 </form>
                 <a href="/admin/backup" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-[#4b85d1]/15 hover:bg-[#4b85d1]/25 text-[#4b85d1] border border-[#4b85d1]/30 rounded-xl text-xs font-bold transition-colors">دانلود بکاپ JSON</a>
-                <button type="button" onclick="openRestoreModal()" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-bold transition-colors cursor-pointer">بازیابی / آپلود بکاپ</button>
                 <a href="/admin/logout" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-colors">خروج</a>
             </div>
         </header>
@@ -737,6 +724,27 @@ def render_admin_html(profiles, domain: str, csrf_token: str, alert_msg: str = N
             <div class="surface-card hover-lift p-5 rounded-3xl animate-enter stagger-4">
                 <div class="text-xs text-slate-400 mb-1">مجموع آپدیت کلاینت‌ها</div>
                 <div class="text-2xl sm:text-3xl font-black text-[#4b85d1]">{total_hits} <span class="text-xs font-normal text-slate-400">بار</span></div>
+            </div>
+        </section>
+
+        <!-- بخش آپلود و بازیابی بکاپ در خود داشبورد -->
+        <section class="surface-card p-6 rounded-3xl animate-enter stagger-1 border border-emerald-500/25 bg-emerald-500/5">
+            <h2 class="text-base font-bold mb-3 flex items-center gap-2 text-emerald-400">
+                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                آپلود و بازیابی بکاپ اشتراک‌ها
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                <div class="md:col-span-2">
+                    <label class="block text-xs text-slate-400 mb-1.5">فایل بکاپ JSON را انتخاب کنید:</label>
+                    <input type="file" id="dashboardBackupFile" accept=".json" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-emerald-500">
+                </div>
+                <div class="flex flex-col gap-2 pt-2 md:pt-4">
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="overwrite_backup_chk" class="rounded">
+                        <label for="overwrite_backup_chk" class="text-xs text-slate-300 select-none">توکن‌های تکراری به‌روز شوند</label>
+                    </div>
+                    <button type="button" onclick="uploadAndRestoreBackup()" id="btnUploadBackup" class="btn-press w-full min-h-[42px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-lg">آپلود و اعمال بکاپ</button>
+                </div>
             </div>
         </section>
 
@@ -811,29 +819,6 @@ def render_admin_html(profiles, domain: str, csrf_token: str, alert_msg: str = N
         </section>
     </main>
 
-    <!-- مودال آپلود و بازگردانی بکاپ -->
-    <div id="restoreModal" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeRestoreModal()">
-        <div class="surface-card rounded-3xl p-6 sm:p-8 max-w-md w-full shadow-2xl animate-enter" onclick="event.stopPropagation()">
-            <h3 class="text-lg font-bold mb-2">بازیابی دیتابیس از فایل بکاپ</h3>
-            <p class="text-xs text-slate-400 mb-5">فایل بکاپ JSON را آپلود کنید تا اشتراک‌ها بازگردانی شوند.</p>
-            <form action="/admin/backup/restore" method="post" enctype="multipart/form-data" class="space-y-4">
-                <input type="hidden" name="csrf_token" value="{csrf_token}">
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">انتخاب فایل JSON</label>
-                    <input type="file" name="file" accept=".json" required class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#4b85d1]">
-                </div>
-                <div class="flex items-center gap-2">
-                    <input type="checkbox" id="overwrite_existing" name="overwrite_existing" value="1" class="rounded">
-                    <label for="overwrite_existing" class="text-xs text-slate-300">در صورت وجود توکن تکراری، اطلاعات به‌روز شود</label>
-                </div>
-                <div class="flex gap-2 pt-2">
-                    <button type="submit" class="btn-press flex-1 min-h-[42px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer">آپلود و اعمال بکاپ</button>
-                    <button type="button" onclick="closeRestoreModal()" class="btn-press px-4 min-h-[42px] bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-bold rounded-xl text-xs transition-colors cursor-pointer">انصراف</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
     <!-- مودال ویرایش -->
     <div id="editModal" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
         <div class="surface-card rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl animate-enter" onclick="event.stopPropagation()">
@@ -880,6 +865,8 @@ def render_admin_html(profiles, domain: str, csrf_token: str, alert_msg: str = N
     <div id="adminToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-5 py-3 rounded-2xl bg-white text-slate-900 text-xs font-bold shadow-2xl animate-enter"></div>
 
     <script>
+        const adminCsrfToken = "{csrf_token}";
+
         function copyText(txt, msg) {{
             navigator.clipboard.writeText(txt);
             const t = document.getElementById('adminToast');
@@ -911,14 +898,6 @@ def render_admin_html(profiles, domain: str, csrf_token: str, alert_msg: str = N
             document.getElementById('editModal').classList.add('hidden');
             document.getElementById('editModal').classList.remove('flex');
         }}
-        function openRestoreModal() {{
-            document.getElementById('restoreModal').classList.remove('hidden');
-            document.getElementById('restoreModal').classList.add('flex');
-        }}
-        function closeRestoreModal() {{
-            document.getElementById('restoreModal').classList.add('hidden');
-            document.getElementById('restoreModal').classList.remove('flex');
-        }}
         function filterTable() {{
             const q = document.getElementById('searchInput').value.toLowerCase();
             const st = document.getElementById('statusFilter').value;
@@ -927,6 +906,48 @@ def render_admin_html(profiles, domain: str, csrf_token: str, alert_msg: str = N
                 const matchStatus = (st === 'all') || (row.getAttribute('data-status') === st);
                 row.style.display = (matchName && matchStatus) ? '' : 'none';
             }});
+        }}
+
+        async function uploadAndRestoreBackup() {{
+            const fileInput = document.getElementById('dashboardBackupFile');
+            if (!fileInput.files.length) {{
+                alert('لطفاً ابتدا فایل JSON بکاپ را انتخاب کنید.');
+                return;
+            }}
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+
+            reader.onload = async function(e) {{
+                try {{
+                    const parsedJson = JSON.parse(e.target.result);
+                    const overwrite = document.getElementById('overwrite_backup_chk').checked;
+                    const btn = document.getElementById('btnUploadBackup');
+                    btn.disabled = true;
+                    btn.textContent = 'در حال بازگردانی دیتابیس...';
+
+                    const res = await fetch('/admin/backup/restore', {{
+                        method: 'POST',
+                        headers: {{ 'Content-Type': 'application/json' }},
+                        body: JSON.stringify({{
+                            csrf_token: adminCsrfToken,
+                            overwrite_existing: overwrite,
+                            backup: parsedJson
+                        }})
+                    }});
+                    const data = await res.json();
+                    if (data.ok) {{
+                        alert(data.msg);
+                        location.reload();
+                    }} else {{
+                        alert(data.msg || 'خطا در اعمال بکاپ');
+                        btn.disabled = false;
+                        btn.textContent = 'آپلود و اعمال بکاپ';
+                    }}
+                }} catch (err) {{
+                    alert('فایل انتخاب‌شده نامعتبر است یا ساختار JSON درستی ندارد.');
+                }}
+            }};
+            reader.readAsText(file);
         }}
     </script>
 </body>
@@ -1437,7 +1458,7 @@ async def user_dashboard(request: Request, token: str):
     return HTMLResponse(content=render_dashboard_html(ctx))
 
 @app.get("/admin", response_class=HTMLResponse)
-async def admin_panel(request: Request, msg: str = None):
+async def admin_panel(request: Request):
     if not is_admin(request):
         return HTMLResponse(content=render_login_html())
 
@@ -1446,7 +1467,7 @@ async def admin_panel(request: Request, msg: str = None):
 
     clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
     csrf_tok = get_csrf_token(request)
-    return HTMLResponse(content=render_admin_html(profiles, clean_domain, csrf_tok, alert_msg=msg))
+    return HTMLResponse(content=render_admin_html(profiles, clean_domain, csrf_tok))
 
 @app.post("/admin/login")
 async def admin_login(request: Request):
@@ -1496,23 +1517,26 @@ async def admin_backup(request: Request):
     )
 
 @app.post("/admin/backup/restore")
-async def admin_restore_backup(
-    request: Request,
-    csrf_token: str = Form(...),
-    file: UploadFile = File(...),
-    overwrite_existing: str = Form(None)
-):
+async def admin_restore_backup(request: Request):
     if not is_admin(request):
         raise HTTPException(status_code=401)
-    if not verify_csrf(request, csrf_token):
-        raise HTTPException(status_code=403, detail="CSRF token invalid")
-
+    
     try:
-        content = await file.read()
-        backup_data = json.loads(content.decode("utf-8"))
-        profiles = backup_data.get("profiles", [])
+        body = await request.body()
+        payload = json.loads(body.decode("utf-8"))
     except Exception:
-        return RedirectResponse(url="/admin?msg=فایل%20بکاپ%20نامعتبر%20است", status_code=status.HTTP_302_FOUND)
+        return JSONResponse(status_code=400, content={"ok": False, "msg": "فرمت داده ارسال‌شده نامعتبر است."})
+
+    csrf_token = payload.get("csrf_token", "")
+    if not verify_csrf(request, csrf_token):
+        return JSONResponse(status_code=403, content={"ok": False, "msg": "توکن امنیتی CSRF نامعتبر است."})
+
+    backup_data = payload.get("backup", {})
+    profiles = backup_data.get("profiles", [])
+    overwrite_existing = payload.get("overwrite_existing", False)
+
+    if not isinstance(profiles, list):
+        return JSONResponse(status_code=400, content={"ok": False, "msg": "ساختار فایل بکاپ نامعتبر است."})
 
     restored_count = 0
     with get_db() as conn:
@@ -1554,8 +1578,7 @@ async def admin_restore_backup(
         conn.commit()
 
     sub_cache.clear()
-    msg = urllib.parse.quote(f"تعداد {restored_count} اشتراک با موفقیت بازگردانی شد.")
-    return RedirectResponse(url=f"/admin?msg={msg}", status_code=status.HTTP_302_FOUND)
+    return JSONResponse(content={"ok": True, "msg": f"تعداد {restored_count} اشتراک با موفقیت بازگردانی شد."})
 
 @app.post("/admin/cache/clear")
 async def clear_all_cache(request: Request):
