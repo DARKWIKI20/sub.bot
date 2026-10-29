@@ -784,24 +784,24 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
     <div id="adminToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-5 py-3 rounded-2xl bg-white text-slate-900 text-xs font-bold shadow-2xl animate-enter"></div>
 
     <script>
-        function copyText(txt, msg) {
+        function copyText(txt, msg) {{
             navigator.clipboard.writeText(txt);
             const t = document.getElementById('adminToast');
             t.textContent = msg;
             t.classList.remove('hidden');
             setTimeout(() => t.classList.add('hidden'), 2000);
-        }
-        function openQR(url, title) {
+        }}
+        function openQR(url, title) {{
             document.getElementById('adminQrTitle').textContent = 'کد QR اشتراک: ' + title;
             document.getElementById('adminQrImg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=' + encodeURIComponent(url);
             document.getElementById('adminQrModal').classList.remove('hidden');
             document.getElementById('adminQrModal').classList.add('flex');
-        }
-        function closeAdminQR() {
+        }}
+        function closeAdminQR() {{
             document.getElementById('adminQrModal').classList.add('hidden');
             document.getElementById('adminQrModal').classList.remove('flex');
-        }
-        function openEditModal(profile) {
+        }}
+        function openEditModal(profile) {{
             document.getElementById('editForm').action = '/admin/profiles/' + encodeURIComponent(profile.token) + '/edit';
             document.getElementById('edit_name').value = profile.name;
             document.getElementById('edit_upstream').value = profile.upstream_url;
@@ -810,20 +810,20 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             document.getElementById('edit_note').value = profile.admin_note || '';
             document.getElementById('editModal').classList.remove('hidden');
             document.getElementById('editModal').classList.add('flex');
-        }
-        function closeEditModal() {
+        }}
+        function closeEditModal() {{
             document.getElementById('editModal').classList.add('hidden');
             document.getElementById('editModal').classList.remove('flex');
-        }
-        function filterTable() {
+        }}
+        function filterTable() {{
             const q = document.getElementById('searchInput').value.toLowerCase();
             const st = document.getElementById('statusFilter').value;
-            document.querySelectorAll('.profile-row').forEach(row => {
+            document.querySelectorAll('.profile-row').forEach(row => {{
                 const matchName = row.getAttribute('data-name').includes(q);
                 const matchStatus = (st === 'all') || (row.getAttribute('data-status') === st);
                 row.style.display = (matchName && matchStatus) ? '' : 'none';
-            });
-        }
+            }});
+        }}
     </script>
 </body>
 </html>"""
@@ -1147,72 +1147,72 @@ def render_dashboard_html(ctx: dict) -> str:
         const allConfigs = {ctx['configs_json']};
         const checkSvg = '<svg class="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
-        function switchTab(platform) {
-            document.querySelectorAll('.platform-tab-content').forEach(el => {
+        function switchTab(platform) {{
+            document.querySelectorAll('.platform-tab-content').forEach(el => {{
                 el.classList.add('hidden');
                 el.classList.remove('animate-enter');
-            });
+            }});
             document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
             
             const target = document.getElementById('tab-' + platform);
             const btn = document.getElementById('tab-btn-' + platform);
-            if (target) {
+            if (target) {{
                 target.classList.remove('hidden');
                 void target.offsetWidth;
                 target.classList.add('animate-enter');
-            }
+            }}
             if (btn) btn.classList.add('active');
-        }
+        }}
 
-        function filterConfigs() {
+        function filterConfigs() {{
             const q = document.getElementById('confSearch').value.toLowerCase();
-            document.querySelectorAll('.config-item').forEach(el => {
+            document.querySelectorAll('.config-item').forEach(el => {{
                 el.style.display = el.getAttribute('data-confname').includes(q) ? '' : 'none';
-            });
-        }
+            }});
+        }}
 
-        function showToast(msg) {
+        function showToast(msg) {{
             const box = document.getElementById("toastBox");
             box.textContent = msg;
             box.classList.remove("hidden");
             setTimeout(() => box.classList.add("hidden"), 2000);
-        }
+        }}
 
-        function animateCopyBtn(btn) {
+        function animateCopyBtn(btn) {{
             if (!btn) return;
             const orig = btn.innerHTML;
             btn.innerHTML = checkSvg;
-            setTimeout(() => { btn.innerHTML = orig; }, 1200);
-        }
+            setTimeout(() => {{ btn.innerHTML = orig; }}, 1200);
+        }}
 
-        function copySubUrl(btn) {
+        function copySubUrl(btn) {{
             navigator.clipboard.writeText(subUrl);
             animateCopyBtn(btn);
             showToast("لینک اشتراک کپی شد!");
-        }
-        function copyConfig(idx, btn) {
+        }}
+        function copyConfig(idx, btn) {{
             navigator.clipboard.writeText(allConfigs[idx]);
             animateCopyBtn(btn);
             showToast("کانفیگ کپی شد!");
-        }
-        function copyAll(btn) {
-            if (allConfigs.length > 0) {
+        }}
+        function copyAll(btn) {{
+            if (allConfigs.length > 0) {{
                 navigator.clipboard.writeText(allConfigs.join("\\n"));
                 showToast("تمام کانفیگ‌ها کپی شدند!");
-            }
-        }
+            }}
+        }}
 
-        function openQRModal(text) {
+        function openQRModal(text) {{
             document.getElementById("qrImage").src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" + encodeURIComponent(text);
             document.getElementById("qrModal").classList.remove("hidden");
             document.getElementById("qrModal").classList.add("flex");
-        }
-        function showSubQR() { openQRModal(subUrl); }
-        function showConfigQR(idx) { openQRModal(allConfigs[idx]); }
-        function closeQR() {
+        }}
+        function showSubQR() {{ openQRModal(subUrl); }}
+        function showConfigQR(idx) {{ openQRModal(allConfigs[idx]); }}
+        function closeQR() {{
             document.getElementById("qrModal").classList.add("hidden");
             document.getElementById("qrModal").classList.remove("flex");
-        }
+        }}
     </script>
 </body>
 </html>"""
