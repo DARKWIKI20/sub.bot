@@ -33,7 +33,7 @@ TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
 CACHE_TTL = int(os.getenv("CACHE_TTL", "120"))
 MAX_CACHE_SIZE = 200
-MAX_REQUEST_BODY = 1048576  # افزایش سقف برای خواندن فایل‌های بکاپ بزرگتر
+MAX_REQUEST_BODY = 1048576
 MAX_UPSTREAM_BYTES = 2097152
 
 sub_cache = {}
@@ -190,32 +190,35 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- محاسبات تاریخ، زمان آنلاین و ترافیک -----------------
+# ----------------- محاسبات تاریخ، وضعیت اتصال و ترافیک -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
     return str(s).translate(PERSIAN_DIGITS)
 
 def format_relative_time(past_timestamp: float) -> str:
-    diff = int(time.time() - past_timestamp)
-    if diff < 0:
-        return "هم‌اکنون"
-    if diff < 60:
-        return f"{to_persian_num(str(diff))} ثانیه پیش"
-    minutes = diff // 60
-    if minutes < 60:
-        return f"{to_persian_num(str(minutes))} دقیقه پیش"
-    hours = minutes // 60
-    if hours < 24:
-        return f"{to_persian_num(str(hours))} ساعت پیش"
-    days = hours // 24
-    if days < 7:
-        return f"{to_persian_num(str(days))} روز پیش"
-    weeks = days // 7
-    if weeks < 4:
-        return f"{to_persian_num(str(weeks))} هفته پیش"
-    months = days // 30
-    return f"{to_persian_num(str(months))} ماه پیش"
+    try:
+        diff = int(time.time() - past_timestamp)
+        if diff < 0:
+            return "هم‌اکنون"
+        if diff < 60:
+            return f"{to_persian_num(str(diff))} ثانیه پیش"
+        minutes = diff // 60
+        if minutes < 60:
+            return f"{to_persian_num(str(minutes))} دقیقه پیش"
+        hours = minutes // 60
+        if hours < 24:
+            return f"{to_persian_num(str(hours))} ساعت پیش"
+        days = hours // 24
+        if days < 7:
+            return f"{to_persian_num(str(days))} روز پیش"
+        weeks = days // 7
+        if weeks < 4:
+            return f"{to_persian_num(str(weeks))} هفته پیش"
+        months = days // 30
+        return f"{to_persian_num(str(months))} ماه پیش"
+    except Exception:
+        return "نامشخص"
 
 def gregorian_to_jalali(gy, gm, gd):
     g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
@@ -264,27 +267,31 @@ def parse_user_info(header_val: str, all_headers: dict = None) -> dict:
     return data
 
 def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
-    now = time.time()
-    for key in ("last_online", "last-online", "last_use", "last-use", "online_at"):
-        if key in info:
-            val = info[key]
-            try:
-                ts = float(val)
-                diff = now - ts
-                if 0 <= diff <= 180:
-                    return True, "روشن و در حال استفاده"
-                return False, format_relative_time(ts)
-            except Exception:
-                pass
+    try:
+        now = time.time()
+        for key in ("last_online", "last-online", "last_use", "last-use", "online_at"):
+            if key in info:
+                val = info[key]
+                try:
+                    ts = float(val)
+                    diff = now - ts
+                    if 0 <= diff <= 180:
+                        return True, "روشن و در حال استفاده"
+                    return False, format_relative_time(ts)
+                except Exception:
+                    pass
 
-    for c in configs:
-        name_lower = c["name"].lower()
-        if "online" in name_lower or "متصل" in name_lower:
-            return True, "روشن و در حال استفاده"
-        if "آخرین اتصال" in name_lower or "last seen" in name_lower:
-            return False, c["name"].replace("آخرین اتصال:", "").strip()
+        for c in configs:
+            name_lower = str(c.get("name", "")).lower()
+            if "online" in name_lower or "متصل" in name_lower:
+                return True, "روشن و در حال استفاده"
+            if "آخرین اتصال" in name_lower or "last seen" in name_lower:
+                clean_txt = c["name"].replace("آخرین اتصال:", "").replace("آخرین اتصال", "").replace("last seen:", "").strip()
+                return False, clean_txt if clean_txt else "نامشخص"
 
-    return False, "نامشخص در لینک اصلی"
+        return False, "نامشخص"
+    except Exception:
+        return False, "نامشخص"
 
 def apply_fake_traffic(upload: int, download: int, total: int, fake_total_gb: float) -> tuple[int, int, int]:
     if not fake_total_gb or fake_total_gb <= 0:
@@ -1405,9 +1412,9 @@ async def user_dashboard(request: Request, token: str):
     if not is_blocked:
         try:
             sub_data = await get_cached_sub_data(token, profile["upstream_url"])
-            info = sub_data["info"]
-            configs = sub_data["configs"]
-            configs_json = sub_data["configs_json"]
+            info = sub_data.get("info", {})
+            configs = sub_data.get("configs", [])
+            configs_json = sub_data.get("configs_json", "[]")
             is_online = sub_data.get("is_online", False)
             last_seen_text = sub_data.get("last_seen_text", "نامشخص")
             
@@ -1419,7 +1426,8 @@ async def user_dashboard(request: Request, token: str):
             fake_gb = profile["fake_total_gb"] or 0
             upload, download, total_quota = apply_fake_traffic(raw_up, raw_down, raw_total, fake_gb)
         except Exception:
-            pass
+            is_online = False
+            last_seen_text = "نامشخص"
 
     used_traffic = upload + download
     remaining = max(0, total_quota - used_traffic)
@@ -1743,7 +1751,7 @@ async def telegram_webhook(req: Request):
         else:
             try:
                 sub_data = await get_cached_sub_data(profile["token"], profile["upstream_url"])
-                info = sub_data["info"]
+                info = sub_data.get("info", {})
                 fake_gb = profile["fake_total_gb"] or 0
                 u, d, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_gb)
                 
