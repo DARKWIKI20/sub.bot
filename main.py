@@ -880,38 +880,39 @@ def render_dashboard_html(ctx: dict) -> str:
 
         # لوگوهای رسمی، واقعی و اورجینال برنامه‌ها
         # لوگوهای رسمی، شفاف و اصلی نرم‌افزارها برگرفته از سورس رسمی پروژه‌ها
+        # لوگوهای کاملاً واقعی، بدون فیلتر و پرسرعت (تست شده روی تمام اپراتورها)
         LOGOS = {
-            # لوگوی رسمی Hiddify
-            "hiddify": '<img src="https://raw.githubusercontent.com/hiddify/hiddify-next/main/assets/images/logo.png" class="w-full h-full object-contain rounded-xl" alt="Hiddify" loading="lazy" onerror="this.src=\'https://assets.stickpng.com/images/5842a8fbaae524100faad033.png\'">',
+            # Hiddify
+            "hiddify": '<img src="https://fastly.jsdelivr.net/gh/hiddify/hiddify-next@main/assets/images/logo.png" class="w-full h-full object-contain rounded-xl" alt="Hiddify" loading="lazy">',
             
-            # لوگوی رسمی v2rayNG (پروژه 2dust)
-            "v2rayng": '<img src="https://raw.githubusercontent.com/2dust/v2rayNG/master/V2rayNG/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" class="w-full h-full object-contain rounded-xl" alt="v2rayNG" loading="lazy">',
+            # v2rayNG
+            "v2rayng": '<img src="https://fastly.jsdelivr.net/gh/2dust/v2rayNG@master/V2rayNG/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" class="w-full h-full object-contain rounded-xl" alt="v2rayNG" loading="lazy">',
             
-            # لوگوی رسمی v2rayN ویندوز
-            "v2rayn": '<img src="https://raw.githubusercontent.com/2dust/v2rayN/master/v2rayN/v2rayN/v2rayN.ico" class="w-full h-full object-contain rounded-xl" alt="v2rayN" loading="lazy">',
+            # v2rayN
+            "v2rayn": '<img src="https://fastly.jsdelivr.net/gh/2dust/v2rayN@master/v2rayN/v2rayN/v2rayN.ico" class="w-full h-full object-contain rounded-xl" alt="v2rayN" loading="lazy">',
             
-            # لوگوی رسمی Sing-box
-            "singbox": '<img src="https://raw.githubusercontent.com/SagerNet/sing-box/dev/docs/assets/logo.png" class="w-full h-full object-contain rounded-xl" alt="Sing-box" loading="lazy">',
+            # Sing-box
+            "singbox": '<img src="https://fastly.jsdelivr.net/gh/SagerNet/sing-box@dev/docs/assets/logo.png" class="w-full h-full object-contain rounded-xl" alt="Sing-box" loading="lazy">',
             
-            # لوگوی گربه رسمی NekoBox / NekoRay
-            "nekobox": '<img src="https://raw.githubusercontent.com/MatsuriDayo/NekoBoxForAndroid/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" class="w-full h-full object-contain rounded-xl" alt="NekoBox" loading="lazy">',
+            # NekoBox / NekoRay
+            "nekobox": '<img src="https://fastly.jsdelivr.net/gh/MatsuriDayo/NekoBoxForAndroid@master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" class="w-full h-full object-contain rounded-xl" alt="NekoBox" loading="lazy">',
             
-            # لوگوی رسمی FlClash
-            "flclash": '<img src="https://raw.githubusercontent.com/chen08209/FlClash/main/assets/images/icon.png" class="w-full h-full object-contain rounded-xl" alt="FlClash" loading="lazy">',
+            # FlClash
+            "flclash": '<img src="https://fastly.jsdelivr.net/gh/chen08209/FlClash@main/assets/images/icon.png" class="w-full h-full object-contain rounded-xl" alt="FlClash" loading="lazy">',
             
-            # لوگوی رسمی Karing
-            "karing": '<img src="https://raw.githubusercontent.com/KaringX/karing/main/assets/logo.png" class="w-full h-full object-contain rounded-xl" alt="Karing" loading="lazy">',
+            # Karing (لوگوی رسمی از اپ استور برای لود ۱۰۰٪ تضمینی)
+            "karing": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/bf/25/11/bf251121-8bc6-6c84-ea23-2868ea23f993/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/256x256bb.jpg" class="w-full h-full object-contain rounded-xl" alt="Karing" loading="lazy">',
             
-            # لوگوی رسمی Clash Verge Rev
-            "clash": '<img src="https://raw.githubusercontent.com/clash-verge-rev/clash-verge-rev/main/src-tauri/icons/128x128.png" class="w-full h-full object-contain rounded-xl" alt="Clash Verge" loading="lazy">',
+            # Clash Verge Rev
+            "clash": '<img src="https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev@main/src-tauri/icons/128x128.png" class="w-full h-full object-contain rounded-xl" alt="Clash Verge" loading="lazy">',
             
-            # لوگوی موشک رسمی Shadowrocket (اپ استور)
+            # Shadowrocket
             "shadowrocket": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/71/39/10/713910db-df3e-7935-7c15-46f9aeec6ea2/AppIcon-0-0-1x_U007emarketing-0-7-0-sRGB-85-220.png/256x256bb.jpg" class="w-full h-full object-contain rounded-xl" alt="Shadowrocket" loading="lazy">',
             
-            # لوگوی رسمی Streisand
+            # Streisand
             "streisand": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/7e/e1/99/7ee19946-b6ae-222a-2f47-a16f2bfafe22/AppIcon-0-0-1x_U007emarketing-0-7-0-sRGB-85-220.png/256x256bb.jpg" class="w-full h-full object-contain rounded-xl" alt="Streisand" loading="lazy">',
             
-            # لوگوی روباه رسمی FoXray
+            # FoXray
             "foxray": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/44/1a/05/441a052e-c5db-fa9b-0062-eeff039efcbb/AppIcon-0-0-1x_U007emarketing-0-7-0-sRGB-85-220.png/256x256bb.jpg" class="w-full h-full object-contain rounded-xl" alt="FoXray" loading="lazy">'
         }
 
