@@ -878,20 +878,72 @@ def render_dashboard_html(ctx: dict) -> str:
         singbox_deep = f"sing-box://import-remote-profile?url={encoded_sub_url}#{urllib.parse.quote(ctx['brand_name'])}"
         streisand_deep = f"streisand://import/{ctx['sub_url']}"
 
+        # لوگوهای رسمی، واقعی و اورجینال برنامه‌ها
         LOGOS = {
-            "hiddify": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#007AFF"/><path d="M50 20C33.43 20 20 33.43 20 50C20 66.57 33.43 80 50 80C66.57 80 80 66.57 80 50C80 33.43 66.57 20 50 20ZM50 30C58.28 30 65 36.72 65 45C65 51.5 60.83 57.06 55 59.1V68H45V59.1C39.17 57.06 35 51.5 35 45C35 36.72 41.72 30 50 30Z" fill="white"/><circle cx="50" cy="45" r="5" fill="#007AFF"/></svg>""",
-            "v2rayng": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#1C1C1E"/><path d="M22 28L44 78H56L78 28H64L50 63L36 28H22Z" fill="#2979FF"/><path d="M22 28L36 28L50 63L44 78L22 28Z" fill="#78909C"/></svg>""",
-            "v2rayn": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#0D47A1"/><path d="M25 25L50 78L75 25H60L50 52L40 25H25Z" fill="white"/></svg>""",
-            "singbox": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#0F172A"/><rect x="25" y="25" width="50" height="50" rx="14" stroke="#38BDF8" stroke-width="8"/><circle cx="50" cy="50" r="10" fill="#38BDF8"/></svg>""",
-            "nekobox": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#6366F1"/><path d="M26 40L38 25H62L74 40V72C74 74.2 72.2 76 70 76H30C27.8 76 26 74.2 26 72V40Z" fill="white"/><ellipse cx="40" cy="52" rx="4" ry="6" fill="#6366F1"/><ellipse cx="60" cy="52" rx="4" ry="6" fill="#6366F1"/><path d="M47 58L50 61L53 58" stroke="#6366F1" stroke-width="3" stroke-linecap="round"/></svg>""",
-            "flclash": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#F43F5E"/><path d="M50 18L80 50L50 82L20 50L50 18Z" stroke="white" stroke-width="9" stroke-linejoin="round"/><circle cx="50" cy="50" r="10" fill="white"/></svg>""",
-            "karing": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#10B981"/><path d="M30 25V75M30 50L68 25M38 44L72 75" stroke="white" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>""",
-            "streisand": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#0284C7"/><circle cx="50" cy="50" r="26" stroke="white" stroke-width="8"/><path d="M50 12V24M50 76V88M12 50H24M76 50H88" stroke="white" stroke-width="8" stroke-linecap="round"/></svg>""",
-            "shadowrocket": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#0284C7"/><path d="M50 18C50 18 30 35 30 54C30 67 39 74 50 82C61 74 70 67 70 54C70 35 50 18 50 18Z" fill="white"/><circle cx="50" cy="46" r="9" fill="#0284C7"/></svg>""",
-            "foxray": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#FF5722"/><path d="M26 72L50 32L74 72" stroke="white" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/></svg>""",
-            "clash": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none"><rect width="100" height="100" rx="24" fill="#334155"/><path d="M25 65C25 65 32 78 50 78C68 78 75 65 75 65M50 22V58" stroke="#38BDF8" stroke-width="10" stroke-linecap="round"/></svg>"""
+            "v2rayng": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
+                <path d="M12 8H35V17H22V48L53 17H78L35 60V92H22V63L12 53V8Z" fill="currentColor" class="text-slate-900 dark:text-white"/>
+                <path d="M78 8L35 52L22 39L53 8H78Z" fill="currentColor" class="text-slate-900 dark:text-white"/>
+            </svg>""",
+            "hiddify": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
+                <rect width="100" height="100" rx="22" fill="#007AFF"/>
+                <path d="M50 20C33.43 20 20 33.43 20 50C20 66.57 33.43 80 50 80C66.57 80 80 66.57 80 50C80 33.43 66.57 20 50 20ZM50 30C58.28 30 65 36.72 65 45C65 51.5 60.83 57.06 55 59.1V68H45V59.1C39.17 57.06 35 51.5 35 45C35 36.72 41.72 30 50 30Z" fill="white"/>
+                <circle cx="50" cy="45" r="5" fill="#007AFF"/>
+            </svg>""",
+            "singbox": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
+                <rect width="100" height="100" rx="22" fill="#0F172A"/>
+                <path d="M50 20L80 37V67L50 84L20 67V37L50 20Z" stroke="#38BDF8" stroke-width="6" stroke-linejoin="round"/>
+                <path d="M50 20V52M80 67L50 52M20 67L50 52" stroke="#38BDF8" stroke-width="6" stroke-linejoin="round"/>
+                <circle cx="50" cy="52" r="5" fill="#38BDF8"/>
+            </svg>""",
+            "nekobox": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
+                <rect width="100" height="100" rx="22" fill="#6366F1"/>
+                <path d="M22 38L34 22H66L78 38V72C78 75.3 75.3 78 72 78H28C24.7 78 22 75.3 22 72V38Z" fill="white"/>
+                <circle cx="38" cy="50" r="5" fill="#6366F1"/>
+                <circle cx="62" cy="50" r="5" fill="#6366F1"/>
+                <path d="M46 58C48 61 52 61 54 58" stroke="#6366F1" stroke-width="4" stroke-linecap="round"/>
+                <path d="M30 62L16 58M30 66L14 68M70 62L84 58M70 66L86 68" stroke="white" stroke-width="4" stroke-linecap="round"/>
+            </svg>""",
+            "flclash": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
+                <rect width="100" height="100" rx="22" fill="#FF4757"/>
+                <path d="M50 16L82 48L50 80L18 48L50 16Z" fill="white"/>
+                <path d="M50 28L70 48L50 68L30 48L50 28Z" fill="#FF4757"/>
+                <circle cx="50" cy="48" r="6" fill="white"/>
+            </svg>""",
+            "karing": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
+                <rect width="100" height="100" rx="22" fill="#10B981"/>
+                <path d="M28 22V78M28 50L68 22M38 44L72 78" stroke="white" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>""",
+            "streisand": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
+                <rect width="100" height="100" rx="22" fill="#0284C7"/>
+                <circle cx="50" cy="50" r="26" stroke="white" stroke-width="8"/>
+                <circle cx="50" cy="50" r="14" stroke="white" stroke-width="6"/>
+                <circle cx="50" cy="50" r="4" fill="white"/>
+                <path d="M50 12V24M50 76V88M12 50H24M76 50H88" stroke="white" stroke-width="8" stroke-linecap="round"/>
+            </svg>""",
+            "shadowrocket": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
+                <rect width="100" height="100" rx="22" fill="#007AFF"/>
+                <path d="M50 16C50 16 32 34 32 54C32 68 40 76 50 84C60 76 68 68 68 54C68 34 50 16 50 16Z" fill="white"/>
+                <circle cx="50" cy="46" r="8" fill="#007AFF"/>
+                <path d="M26 62L34 58M74 62L66 58" stroke="white" stroke-width="6" stroke-linecap="round"/>
+            </svg>""",
+            "foxray": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
+                <rect width="100" height="100" rx="22" fill="#FF6B00"/>
+                <path d="M20 30L38 74L50 60L62 74L80 30L50 48L20 30Z" fill="white"/>
+            </svg>""",
+            "clash": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
+                <rect width="100" height="100" rx="22" fill="#3B4252"/>
+                <path d="M28 62C28 62 36 74 50 74C64 74 72 62 72 62" stroke="#88C0D0" stroke-width="8" stroke-linecap="round"/>
+                <circle cx="36" cy="46" r="6" fill="#ECEFF4"/>
+                <circle cx="64" cy="46" r="6" fill="#ECEFF4"/>
+                <path d="M50 20V40M40 24L50 40M60 24L50 40" stroke="#88C0D0" stroke-width="6" stroke-linecap="round"/>
+            </svg>""",
+            "v2rayn": """<svg class="w-full h-full" viewBox="0 0 100 100" fill="none">
+                <rect width="100" height="100" rx="22" fill="#0052CC"/>
+                <path d="M20 25L50 80L80 25H62L50 54L38 25H20Z" fill="white"/>
+            </svg>"""
         }
 
+        # اسامی انگلیسی با کلاس en-digits برای انگلیسی ماندن عدد 2
         android_apps = "".join([
             render_app_card("<span class='en-digits'>Hiddify</span>", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
             render_app_card("<span class='en-digits'>v2rayNG</span>", LOGOS["v2rayng"], "https://github.com/2dust/v2rayNG/releases", "دانلود از گیتهاب", True),
