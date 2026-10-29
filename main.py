@@ -828,16 +828,15 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
 </body>
 </html>"""
 
-def render_app_card(name_html: str, logo_html: str, url: str, btn_label: str, recommended: bool = False) -> str:
-    badge = '<span class="absolute top-3 right-3 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/25">پیشنهادی</span>' if recommended else ''
+def render_app_card(name_html: str, url: str, btn_label: str, recommended: bool = False) -> str:
+    badge = '<span class="absolute top-2.5 right-2.5 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/25">پیشنهادی</span>' if recommended else ''
     return f"""
     <div class="surface-card hover-lift p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-between text-center relative border border-slate-200/80 dark:border-zinc-800">
         {badge}
-        <div class="w-12 h-12 rounded-2xl mb-3 flex items-center justify-center p-1.5 bg-slate-100 dark:bg-zinc-800/80 shadow-md mt-2 overflow-hidden">
-            {logo_html}
+        <div class="w-full text-center mt-3 mb-4">
+            <h3 class="font-extrabold text-base tracking-wide">{name_html}</h3>
         </div>
-        <h3 class="font-bold text-sm mb-4">{name_html}</h3>
-        <a href="{url}" target="_blank" rel="noopener noreferrer" class="btn-press w-full min-h-[42px] inline-flex items-center justify-center bg-[#4b85d1] hover:bg-[#3671bf] text-white rounded-xl text-xs font-bold transition-colors shadow-xs">{btn_label}</a>
+        <a href="{url}" target="_blank" rel="noopener noreferrer" class="btn-press w-full min-h-[40px] inline-flex items-center justify-center bg-[#4b85d1] hover:bg-[#3671bf] text-white rounded-xl text-xs font-bold transition-colors shadow-xs">{btn_label}</a>
     </div>"""
 
 def render_dashboard_html(ctx: dict) -> str:
@@ -878,78 +877,37 @@ def render_dashboard_html(ctx: dict) -> str:
         singbox_deep = f"sing-box://import-remote-profile?url={encoded_sub_url}#{urllib.parse.quote(ctx['brand_name'])}"
         streisand_deep = f"streisand://import/{ctx['sub_url']}"
 
-        # لوگوهای رسمی، واقعی و اورجینال برنامه‌ها
-        # لوگوهای رسمی، شفاف و اصلی نرم‌افزارها برگرفته از سورس رسمی پروژه‌ها
-        # لوگوهای کاملاً واقعی، بدون فیلتر و پرسرعت (تست شده روی تمام اپراتورها)
-        # لوگوهای آفلاین، تضمینی و بدون وابستگی به هیچ سایت خارجی (SVG استاندارد و تمیز)
-        # آیکون‌های ۱۰۰٪ واقعی، اورجینال و بدون فیلتر از سرورهای CDN رسمی
-        LOGOS = {
-            # آیکون رسمی هیدیفای (Hiddify)
-            "hiddify": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/bf/8d/f3/bf8df357-1bf6-5a63-e380-60a63aa5ceea/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/256x256bb.jpg" class="w-full h-full object-cover rounded-xl" alt="Hiddify">',
-
-            # آیکون رسمی v2rayNG (پس‌زمینه سفید با V معروف مشکی)
-            "v2rayng": '<img src="https://play-lh.googleusercontent.com/yv7rU1iF-Q3E2UuD94XUq9F7XpX_Kk9H2n1wzYq7c3a0kE8v1uX2q5_A1B2C3D4E5F=w240-h240-rw" class="w-full h-full object-cover rounded-xl" alt="v2rayNG" onerror="this.src=\'https://api.iconify.design/simple-icons:v2ray.svg?color=%23000000\'">',
-
-            # آیکون رسمی Sing-box
-            "singbox": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple126/v4/1e/8a/a5/1e8aa54a-7f62-75ca-7681-309d93df2bb5/AppIcon-0-0-1x_U007emarketing-0-7-0-85-220.png/256x256bb.jpg" class="w-full h-full object-cover rounded-xl" alt="Sing-box">',
-
-            # آیکون رسمی Karing (سبز رنگ با حرف K)
-            "karing": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/bf/25/11/bf251121-8bc6-6c84-ea23-2868ea23f993/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/256x256bb.jpg" class="w-full h-full object-cover rounded-xl" alt="Karing">',
-
-            # آیکون رسمی NekoBox (گربه داخل جعبه)
-            "nekobox": '<img src="https://fastly.jsdelivr.net/gh/MatsuriDayo/NekoBoxForAndroid@master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" class="w-full h-full object-cover rounded-xl" alt="NekoBox">',
-
-            # آیکون رسمی FlClash (بادبادک گرادینت)
-            "flclash": '<img src="https://fastly.jsdelivr.net/gh/chen08209/FlClash@main/assets/images/icon.png" class="w-full h-full object-cover rounded-xl" alt="FlClash">',
-
-            # آیکون رسمی Clash Verge Rev
-            "clash": '<img src="https://fastly.jsdelivr.net/gh/clash-verge-rev/clash-verge-rev@main/src-tauri/icons/128x128.png" class="w-full h-full object-cover rounded-xl" alt="Clash Verge">',
-
-            # آیکون رسمی v2rayN ویندوز
-            "v2rayn": '<img src="https://fastly.jsdelivr.net/gh/2dust/v2rayN@master/v2rayN/v2rayN/v2rayN.ico" class="w-full h-full object-cover rounded-xl" alt="v2rayN">',
-
-            # آیکون رسمی Shadowrocket (موشک آبی)
-            "shadowrocket": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/71/39/10/713910db-df3e-7935-7c15-46f9aeec6ea2/AppIcon-0-0-1x_U007emarketing-0-7-0-sRGB-85-220.png/256x256bb.jpg" class="w-full h-full object-cover rounded-xl" alt="Shadowrocket">',
-
-            # آیکون رسمی Streisand
-            "streisand": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/7e/e1/99/7ee19946-b6ae-222a-2f47-a16f2bfafe22/AppIcon-0-0-1x_U007emarketing-0-7-0-sRGB-85-220.png/256x256bb.jpg" class="w-full h-full object-cover rounded-xl" alt="Streisand">',
-
-            # آیکون رسمی FoXray (روباه نارنجی)
-            "foxray": '<img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/44/1a/05/441a052e-c5db-fa9b-0062-eeff039efcbb/AppIcon-0-0-1x_U007emarketing-0-7-0-sRGB-85-220.png/256x256bb.jpg" class="w-full h-full object-cover rounded-xl" alt="FoXray">'
-        }
-
-        # اسامی انگلیسی با کلاس en-digits برای انگلیسی ماندن عدد 2
         android_apps = "".join([
-            render_app_card("<span class='en-digits'>Hiddify</span>", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>v2rayNG</span>", LOGOS["v2rayng"], "https://github.com/2dust/v2rayNG/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Flclash</span>", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Karing</span>", LOGOS["karing"], "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
-            render_app_card("<span class='en-digits'>Sing-box</span>", LOGOS["singbox"], "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
-            render_app_card("<span class='en-digits'>NekoBox</span>", LOGOS["nekobox"], "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>v2rayNG</span>", "https://github.com/2dust/v2rayNG/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Karing</span>", "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Sing-box</span>", "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>NekoBox</span>", "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases", "دانلود از گیتهاب", False),
         ])
         ios_apps = "".join([
-            render_app_card("<span class='en-digits'>Hiddify</span>", LOGOS["hiddify"], "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532", "دانلود از اپ‌استور", True),
-            render_app_card("<span class='en-digits'>Streisand</span>", LOGOS["streisand"], "https://apps.apple.com/us/app/streisand/id6450534064", "دانلود از اپ‌استور", True),
-            render_app_card("<span class='en-digits'>Shadowrocket</span>", LOGOS["shadowrocket"], "https://apps.apple.com/us/app/shadowrocket/id932747118", "دانلود از اپ‌استور", True),
-            render_app_card("<span class='en-digits'>Karing</span>", LOGOS["karing"], "https://apps.apple.com/us/app/karing/id6472431552", "دانلود از اپ‌استور", False),
-            render_app_card("<span class='en-digits'>Sing-box</span>", LOGOS["singbox"], "https://apps.apple.com/us/app/sing-box/id6451272673", "دانلود از اپ‌استور", False),
-            render_app_card("<span class='en-digits'>FoXray</span>", LOGOS["foxray"], "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
+            render_app_card("<span class='en-digits'>Hiddify</span>", "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532", "دانلود از اپ‌استور", True),
+            render_app_card("<span class='en-digits'>Streisand</span>", "https://apps.apple.com/us/app/streisand/id6450534064", "دانلود از اپ‌استور", True),
+            render_app_card("<span class='en-digits'>Shadowrocket</span>", "https://apps.apple.com/us/app/shadowrocket/id932747118", "دانلود از اپ‌استور", True),
+            render_app_card("<span class='en-digits'>Karing</span>", "https://apps.apple.com/us/app/karing/id6472431552", "دانلود از اپ‌استور", False),
+            render_app_card("<span class='en-digits'>Sing-box</span>", "https://apps.apple.com/us/app/sing-box/id6451272673", "دانلود از اپ‌استور", False),
+            render_app_card("<span class='en-digits'>FoXray</span>", "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
         ])
         win_apps = "".join([
-            render_app_card("<span class='en-digits'>Hiddify</span>", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>v2rayN</span>", LOGOS["v2rayn"], "https://github.com/2dust/v2rayN/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Flclash</span>", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Clash Verge</span>", LOGOS["clash"], "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", False),
-            render_app_card("<span class='en-digits'>Karing</span>", LOGOS["karing"], "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
-            render_app_card("<span class='en-digits'>Nekoray</span>", LOGOS["nekobox"], "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>v2rayN</span>", "https://github.com/2dust/v2rayN/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Clash Verge</span>", "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Karing</span>", "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Nekoray</span>", "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
         ])
         mac_apps = "".join([
-            render_app_card("<span class='en-digits'>Hiddify</span>", LOGOS["hiddify"], "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Clash Verge</span>", LOGOS["clash"], "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Flclash</span>", LOGOS["flclash"], "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Sing-box</span>", LOGOS["singbox"], "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
-            render_app_card("<span class='en-digits'>FoXray</span>", LOGOS["foxray"], "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
-            render_app_card("<span class='en-digits'>Nekoray</span>", LOGOS["nekobox"], "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Clash Verge</span>", "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
+            render_app_card("<span class='en-digits'>Sing-box</span>", "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='en-digits'>FoXray</span>", "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
+            render_app_card("<span class='en-digits'>Nekoray</span>", "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
         ])
 
         main_section = f"""
@@ -1080,7 +1038,7 @@ def render_dashboard_html(ctx: dict) -> str:
                     </div>
                 </div>
 
-                <div class="max-h-[440px] overflow-y-auto space-y-2.5 pl-1 pr-0.5"[cite: 1]>
+                <div class="max-h-[440px] overflow-y-auto space-y-2.5 pl-1 pr-0.5">
                     {conf_items}
                 </div>
             </div>
