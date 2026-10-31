@@ -42,7 +42,7 @@ sub_cache = {}
 login_attempts = {}
 http_client: httpx.AsyncClient = None
 
-# ----------------- دیتابیس و مایگریشن -----------------
+# ----------------- دیتابیس و ساختار جداول -----------------
 def get_db():
     conn = sqlite3.connect(DB_FILE, timeout=10.0)
     conn.row_factory = sqlite3.Row
@@ -88,7 +88,7 @@ def init_db():
 
 init_db()
 
-# ----------------- چرخه حیات و شبکه -----------------
+# ----------------- چرخه حیات و تنظیمات سرور -----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global http_client
@@ -120,7 +120,7 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
-# ----------------- امنیت و اعتبارسنجی -----------------
+# ----------------- امنیت و اعتبارسنجی توکن‌ها -----------------
 def create_session_token() -> str:
     ts = str(int(time.time()))
     sig = hmac.new(SECRET_KEY, f"session:{ts}".encode(), hashlib.sha256).hexdigest()
@@ -198,22 +198,32 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- جایگزینی و دستکاری نام کانفیگ‌ها -----------------
+# ----------------- پردازش و تبدیل نام کانفیگ‌ها با فرمت @@@ -----------------
 def apply_replace_rules(text: str, rules_str: str) -> str:
-    if not rules_str:
+    """
+    قوانین تعویض یا حذف متن:
+    متن_قدیم@@@متن_جدید   -> تعویض
+    عبارت_حذفی            -> حذف کامل
+    """
+    if not rules_str or not text:
         return text
+
     result = text
     for line in rules_str.splitlines():
         line = line.strip()
         if not line:
             continue
-        if "->" in line:
-            parts = line.split("->", 1)
-            target, rep = parts[0].strip(), parts[1].strip()
+
+        if "@@@" in line:
+            parts = line.split("@@@", 1)
+            target = parts[0].strip()
+            replacement = parts[1].strip()
             if target:
-                result = result.replace(target, rep)
+                result = result.replace(target, replacement)
         else:
             result = result.replace(line, "")
+
+    result = re.sub(r"[ \t]+", " ", result).strip()
     return result
 
 def transform_config_name(original_name: str, rules_str: str = "") -> str:
@@ -521,7 +531,7 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- معماری انیمیشن اختصاصی (Emil Kowalski Philosophy) -----------------
+# ----------------- سیستم طراحی و استایل -----------------
 ANIMATED_DESIGN_SYSTEM_CSS = """
 :root {
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
@@ -530,7 +540,6 @@ ANIMATED_DESIGN_SYSTEM_CSS = """
     --dur-press: 140ms;
     --dur-hover: 180ms;
     --dur-enter: 240ms;
-    --dur-modal: 260ms;
 
     --p-blue-500: #4b85d1;
     --p-blue-600: #3671bf;
@@ -569,7 +578,6 @@ body {
 ::-webkit-scrollbar-thumb { background: rgba(75, 133, 209, 0.35); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(75, 133, 209, 0.8); }
 
-/* پویانمایی اصولی ورود: مقیاس از 0.96 و بدون scale(0) */
 @keyframes smoothEnter {
     from {
         opacity: 0;
@@ -591,7 +599,6 @@ body {
 .stagger-3 { animation-delay: 105ms; }
 .stagger-4 { animation-delay: 140ms; }
 
-/* دکمه‌های کنشی با بازخورد فیزیکی و کلیک مطمئن */
 .btn-press {
     transition: transform var(--dur-press) var(--ease-out), 
                 opacity var(--dur-press) var(--ease-out),
@@ -603,7 +610,6 @@ body {
     transform: scale(0.97);
 }
 
-/* افکت هاور با شتاب طبیعی */
 @media (hover: hover) and (pointer: fine) {
     .hover-lift {
         transition: transform var(--dur-hover) var(--ease-out),
@@ -616,7 +622,6 @@ body {
     }
 }
 
-/* تطبیق با تنظیمات Reduced Motion سیستم */
 @media (prefers-reduced-motion: reduce) {
     .animate-enter {
         animation: none !important;
@@ -674,7 +679,6 @@ body {
     display: inline-block;
 }
 
-/* انیمیشن پالس زنده وضعیت آنلاین با فرکانس ملایم */
 @keyframes softPulse {
     0%, 100% { opacity: 1; transform: scale(1); }
     50% { opacity: 0.45; transform: scale(0.92); }
@@ -874,7 +878,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             </div>
         </section>
 
-        <!-- فرم ثبت با پویانمایی ورودی دقیق -->
+        <!-- بخش افزودن ساب جدید با ساختار @@@ و مولتی‌ساب -->
         <section class="surface-card p-6 rounded-3xl animate-enter stagger-2">
             <h2 class="text-base font-bold mb-4 flex items-center gap-2">
                 <svg class="w-5 h-5 text-[#4b85d1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
@@ -904,7 +908,8 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
 
                 <div>
                     <label class="block text-xs text-slate-400 mb-1.5">قوانین تعویض/حذف متن در کانفیگ‌ها (اختیاری)</label>
-                    <textarea name="replace_rules" rows="2" placeholder="متن_قدیم -> متن_جدید (یا فقط کلمه‌ای که باید حذف شود در هر خط)" class="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-[#4b85d1] font-mono"></textarea>
+                    <textarea name="replace_rules" rows="2" placeholder="متن_قدیم@@@متن_جدید (یا فقط عبارت حذفی در هر خط)" class="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-[#4b85d1] font-mono"></textarea>
+                    <p class="text-[10px] text-slate-500 mt-1">مثال: <span class="font-mono text-slate-400">IRAN@@@VIP</span> برای جایگزینی، یا <span class="font-mono text-slate-400">@MyChannel</span> در یک خط برای حذف کامل.</p>
                 </div>
 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -927,7 +932,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             </form>
         </section>
 
-        <!-- لیست و جدول با افکت Stagger -->
+        <!-- جدول لیست ساب‌ها -->
         <section class="surface-card rounded-3xl overflow-hidden animate-enter stagger-3">
             <div class="p-5 sm:p-6 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <h2 class="text-base font-bold">لیست اشتراک‌های دیتاسنتر ({total_count})</h2>
@@ -962,7 +967,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
         </section>
     </main>
 
-    <!-- مودال ویرایش مجهز به ورود ارگونومیک بدون جهش -->
+    <!-- مودال ویرایش -->
     <div id="editModal" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
         <div class="surface-card rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl animate-enter" onclick="event.stopPropagation()">
             <h3 class="text-lg font-bold mb-4">ویرایش اطلاعات ساب</h3>
@@ -988,7 +993,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
                 </div>
                 <div>
                     <label class="block text-xs text-slate-400 mb-1">قوانین تعویض/حذف متن در کانفیگ‌ها</label>
-                    <textarea id="edit_rules" name="replace_rules" rows="2" placeholder="متن_قدیم -> متن_جدید" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-[#4b85d1] font-mono"></textarea>
+                    <textarea id="edit_rules" name="replace_rules" rows="2" placeholder="متن_قدیم@@@متن_جدید (یا فقط عبارت حذفی در هر خط)" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2 text-xs focus:outline-none focus:border-[#4b85d1] font-mono"></textarea>
                 </div>
                 <div>
                     <label class="block text-xs text-slate-400 mb-1">اعلان اختصاصی برای این مشتری</label>
@@ -1442,7 +1447,7 @@ def render_dashboard_html(ctx: dict) -> str:
 </body>
 </html>"""
 
-# ----------------- مسیرهای FastAPI -----------------
+# ----------------- مسیرها (Routes) -----------------
 @app.get("/")
 async def root(request: Request):
     user_agent = request.headers.get("user-agent", "")
