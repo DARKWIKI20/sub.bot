@@ -200,49 +200,47 @@ async def read_bounded_form(request: Request) -> dict:
 
 # ----------------- پردازش و تبدیل نام کانفیگ‌ها با فرمت @@@ -----------------
 def apply_replace_rules(text: str, rules_str: str) -> str:
-    """
-    قوانین تعویض یا حذف متن:
-    متن_قدیم@@@متن_جدید   -> تعویض
-    عبارت_حذفی            -> حذف کامل
-    """
     if not rules_str or not text:
         return text
 
     result = text
-    for line in rules_str.splitlines():
-        line = line.strip()
-        if not line:
-            continue
+    # پاکسازی خطوط و کاراکترهای مخفی ویندوز/لینوکس
+    lines = [l.strip() for l in rules_str.replace("\r", "").split("\n") if l.strip()]
 
+    for line in lines:
         if "@@@" in line:
             parts = line.split("@@@", 1)
             target = parts[0].strip()
             replacement = parts[1].strip()
             if target:
+                # جایگزینی مستقیم
                 result = result.replace(target, replacement)
         else:
+            # حالت حذف کامل
             result = result.replace(line, "")
 
-    result = re.sub(r"[ \t]+", " ", result).strip()
+    # حذف فاصله‌های اضافه ایجادشده
+    result = re.sub(r"\s+", " ", result).strip()
     return result
 
 def transform_config_name(original_name: str, rules_str: str = "") -> str:
     name = original_name.strip()
     if not name:
         return "Server"
-    if rules_str:
-        name = apply_replace_rules(name, rules_str).strip()
-    if not name:
-        name = "Server"
-    if "VIP" in name.upper() or "𝗩𝗜𝗣" in name:
-        name = "VIP"
+
+    # ۱. ابتدا پیش‌فرض‌های عمومی سیستم (در صورت تمایل به تغییر ویژه)
     if "ویژه" in name:
         name = name.replace("ویژه", "Stable")
-    return name
 
-def fix_b64_padding(s: str) -> str:
-    s = s.strip().replace("\r", "").replace("\n", "").replace(" ", "")
-    return s + "=" * ((4 - len(s) % 4) % 4)
+    # ۲. اعمال قوانین اختصاصی کاربر با اولویت قطعی
+    if rules_str:
+        name = apply_replace_rules(name, rules_str)
+
+    # ۳. اگر نام خالی شد نام پیش‌فرض جایگزین شود
+    if not name:
+        name = "Server"
+
+    return name
 
 def parse_and_modify_configs(raw_text: str, rules_str: str = ""):
     raw_text = raw_text.strip()
@@ -264,6 +262,7 @@ def parse_and_modify_configs(raw_text: str, rules_str: str = ""):
         if line.startswith(("vless://", "trojan://", "ss://", "hysteria2://", "hy2://", "tuic://")):
             parts = line.split("#", 1)
             base_part = parts[0]
+            # دیکود کردن کامل متن نام سرور
             orig_remark = urllib.parse.unquote(parts[1]) if len(parts) > 1 else f"Server {idx}"
             new_name = transform_config_name(orig_remark, rules_str)
             new_link = f"{base_part}#{urllib.parse.quote(new_name)}"
@@ -277,7 +276,7 @@ def parse_and_modify_configs(raw_text: str, rules_str: str = ""):
                 orig_remark = str(conf.get("ps", f"Server {idx}"))
                 new_name = transform_config_name(orig_remark, rules_str)
                 conf["ps"] = new_name
-                re_encoded = base64.b64encode(json.dumps(conf).encode("utf-8")).decode("utf-8")
+                re_encoded = base64.b64encode(json.dumps(conf, ensure_ascii=False).encode("utf-8")).decode("utf-8")
                 new_link = f"vmess://{re_encoded}"
                 configs.append({"proto": "VMESS", "name": html.escape(new_name), "link": new_link})
                 modified_raw_lines.append(new_link)
