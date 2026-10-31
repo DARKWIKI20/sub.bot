@@ -120,7 +120,7 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     return response
 
-# ----------------- امنیت و نشست‌ها -----------------
+# ----------------- امنیت و اعتبارسنجی -----------------
 def create_session_token() -> str:
     ts = str(int(time.time()))
     sig = hmac.new(SECRET_KEY, f"session:{ts}".encode(), hashlib.sha256).hexdigest()
@@ -198,13 +198,8 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- پردازش کانفیگ و جایگزینی کلمات -----------------
+# ----------------- جایگزینی و دستکاری نام کانفیگ‌ها -----------------
 def apply_replace_rules(text: str, rules_str: str) -> str:
-    """
-    فرمت قوانین در هر سطر:
-    old -> new
-    یا فقط کلمه‌ای که باید کامل حذف بشه
-    """
     if not rules_str:
         return text
     result = text
@@ -285,7 +280,7 @@ def parse_and_modify_configs(raw_text: str, rules_str: str = ""):
 
     return configs, modified_raw_lines
 
-# ----------------- محاسبات تاریخ، آنلاین و ترافیک فیک -----------------
+# ----------------- تاریخ، ترافیک و حجم فیک -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
@@ -385,10 +380,6 @@ def parse_user_info(header_val: str) -> dict:
     return data
 
 def apply_fake_traffic(upload: int, download: int, total: int, fake_total_gb: float, fake_used_gb: float) -> tuple[int, int, int]:
-    """
-    محاسبه حجم مصرفی و حجم کل فیک.
-    اگر fake_used_gb داده شده باشد، مستقیماً دانلود را برابر آن قرار می‌دهد تا درصد و باقی‌مانده دقیق محاسبه شوند.
-    """
     res_upload = upload
     res_download = download
     res_total = total
@@ -432,7 +423,6 @@ async def fetch_single_upstream(url: str):
     raw_text = res.text.strip()
     info = parse_user_info(resp_headers.get("subscription-userinfo", ""))
 
-    # بررسی وضعیت آنلاین
     is_online = False
     last_seen_text = "نامشخص"
     clean_url = url.rstrip("/")
@@ -531,13 +521,16 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- سیستم طراحی UI/UX مدرن -----------------
+# ----------------- معماری انیمیشن اختصاصی (Emil Kowalski Philosophy) -----------------
 ANIMATED_DESIGN_SYSTEM_CSS = """
 :root {
     --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-    --duration-snappy: 160ms;
-    --duration-flow: 240ms;
-    --duration-enter: 320ms;
+    --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+    
+    --dur-press: 140ms;
+    --dur-hover: 180ms;
+    --dur-enter: 240ms;
+    --dur-modal: 260ms;
 
     --p-blue-500: #4b85d1;
     --p-blue-600: #3671bf;
@@ -576,29 +569,67 @@ body {
 ::-webkit-scrollbar-thumb { background: rgba(75, 133, 209, 0.35); border-radius: 9999px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(75, 133, 209, 0.8); }
 
-@keyframes emilEnter {
-    from { opacity: 0; transform: translateY(12px) scale(0.97); }
-    to { opacity: 1; transform: translateY(0) scale(1); }
+/* پویانمایی اصولی ورود: مقیاس از 0.96 و بدون scale(0) */
+@keyframes smoothEnter {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
-.animate-enter { animation: emilEnter var(--duration-enter) var(--ease-out) both; }
-.stagger-1 { animation-delay: 40ms; }
-.stagger-2 { animation-delay: 80ms; }
-.stagger-3 { animation-delay: 120ms; }
-.stagger-4 { animation-delay: 160ms; }
+.animate-enter {
+    animation: smoothEnter var(--dur-enter) var(--ease-out) both;
+    will-change: transform, opacity;
+}
 
+.stagger-1 { animation-delay: 35ms; }
+.stagger-2 { animation-delay: 70ms; }
+.stagger-3 { animation-delay: 105ms; }
+.stagger-4 { animation-delay: 140ms; }
+
+/* دکمه‌های کنشی با بازخورد فیزیکی و کلیک مطمئن */
 .btn-press {
-    transition: transform var(--duration-snappy) var(--ease-out), opacity var(--duration-snappy) var(--ease-out);
+    transition: transform var(--dur-press) var(--ease-out), 
+                opacity var(--dur-press) var(--ease-out),
+                background-color var(--dur-hover) var(--ease-out),
+                border-color var(--dur-hover) var(--ease-out);
     will-change: transform;
 }
-.btn-press:active { transform: scale(0.96); }
+.btn-press:active {
+    transform: scale(0.97);
+}
 
+/* افکت هاور با شتاب طبیعی */
 @media (hover: hover) and (pointer: fine) {
     .hover-lift {
-        transition: transform var(--duration-flow) var(--ease-out), border-color var(--duration-flow) var(--ease-out);
+        transition: transform var(--dur-hover) var(--ease-out),
+                    border-color var(--dur-hover) var(--ease-out),
+                    box-shadow var(--dur-hover) var(--ease-out);
         will-change: transform;
     }
-    .hover-lift:hover { transform: translateY(-2px); }
+    .hover-lift:hover {
+        transform: translateY(-2px);
+    }
+}
+
+/* تطبیق با تنظیمات Reduced Motion سیستم */
+@media (prefers-reduced-motion: reduce) {
+    .animate-enter {
+        animation: none !important;
+        opacity: 1 !important;
+        transform: none !important;
+    }
+    .hover-lift:hover,
+    .btn-press:active {
+        transform: none !important;
+    }
+    * {
+        transition-duration: 0.01ms !important;
+    }
 }
 
 .surface-card {
@@ -612,7 +643,10 @@ body {
     padding: 0 1.25rem;
     border-radius: 0.85rem;
     font-weight: 700;
-    transition: transform var(--duration-snappy) var(--ease-out), background var(--duration-snappy) var(--ease-out), color var(--duration-snappy) var(--ease-out);
+    transition: transform var(--dur-press) var(--ease-out), 
+                background var(--dur-hover) var(--ease-out), 
+                color var(--dur-hover) var(--ease-out),
+                border-color var(--dur-hover) var(--ease-out);
 }
 .tab-button.active {
     background: var(--btn-primary-bg);
@@ -638,6 +672,15 @@ body {
     font-variant-numeric: normal !important;
     direction: ltr !important;
     display: inline-block;
+}
+
+/* انیمیشن پالس زنده وضعیت آنلاین با فرکانس ملایم */
+@keyframes softPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.45; transform: scale(0.92); }
+}
+.pulse-online {
+    animation: softPulse 2s var(--ease-in-out) infinite;
 }
 """
 
@@ -687,7 +730,6 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
         safe_token = html.escape(p["token"])
         safe_note = html.escape(p["admin_note"] or "")
         safe_notice = html.escape(p["custom_notice"] or "")
-        safe_rules = html.escape(p["replace_rules"] or "")
         hits = p["sub_hits"] or 0
         last_fetch = html.escape(p["last_sub_fetch"] or "بدون اتصال")
         fake_tot = p["fake_total_gb"] or 0
@@ -699,7 +741,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             u, d, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_tot, fake_u)
             traffic_badge = f"<span class='text-xs font-mono text-emerald-400' dir='ltr'>{format_bytes(u+d)} / {format_bytes(tot)}</span>"
             if cached_data.get("is_online"):
-                online_badge = '<span class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>آنلاین</span>'
+                online_badge = '<span class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400"><span class="w-2 h-2 rounded-full bg-emerald-500 pulse-online"></span>آنلاین</span>'
             else:
                 last_s = cached_data.get("last_seen_text", "نامشخص")
                 online_badge = f'<span class="text-xs text-slate-400">{last_s}</span>'
@@ -741,12 +783,12 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             </td>
             <td class="p-4 whitespace-nowrap">
                 <div class="flex items-center gap-1.5">
-                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn-press px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-[#4b85d1] hover:text-white text-xs font-semibold transition-colors cursor-pointer">کپی داشبورد</button>
-                    <button type="button" onclick="copyText('{sub_url}', 'لینک ساب کپی شد')" class="btn-press px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-[#4b85d1] hover:text-white text-xs font-semibold transition-colors cursor-pointer">کپی ساب</button>
-                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn-press p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-slate-300 transition-colors cursor-pointer" title="QR Code">
+                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn-press px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-[#4b85d1] hover:text-white text-xs font-semibold cursor-pointer">کپی داشبورد</button>
+                    <button type="button" onclick="copyText('{sub_url}', 'لینک ساب کپی شد')" class="btn-press px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-[#4b85d1] hover:text-white text-xs font-semibold cursor-pointer">کپی ساب</button>
+                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn-press p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-slate-300 cursor-pointer" title="QR Code">
                         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                     </button>
-                    <a href="/d/{safe_token}" target="_blank" class="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[#4b85d1] transition-colors" title="مشاهده">
+                    <a href="/d/{safe_token}" target="_blank" class="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[#4b85d1] btn-press" title="مشاهده">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                     </a>
                 </div>
@@ -761,18 +803,18 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             <td class="p-4 whitespace-nowrap">{status_badge}</td>
             <td class="p-4 whitespace-nowrap">
                 <div class="flex justify-center items-center gap-1.5">
-                    <button type="button" onclick="openEditModal({p_json})" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 transition-colors cursor-pointer">ویرایش</button>
+                    <button type="button" onclick="openEditModal({p_json})" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 cursor-pointer">ویرایش</button>
                     <form action="/admin/profiles/{safe_token}/refresh-cache" method="post" class="m-0">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-press min-h-[36px] px-2.5 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-slate-300 transition-colors cursor-pointer" title="بروزرسانی کش">🔄</button>
+                        <button type="submit" class="btn-press min-h-[36px] px-2.5 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-slate-300 cursor-pointer" title="بروزرسانی کش">🔄</button>
                     </form>
                     <form action="/admin/profiles/{safe_token}/toggle-block" method="post" class="m-0">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold transition-colors cursor-pointer {btn_class}">{btn_text}</button>
+                        <button type="submit" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold cursor-pointer {btn_class}">{btn_text}</button>
                     </form>
                     <form action="/admin/profiles/{safe_token}/delete" method="post" class="m-0" onsubmit="return confirm('آیا از حذف کامل این ساب اطمینان داری؟');">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors cursor-pointer">حذف</button>
+                        <button type="submit" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 cursor-pointer">حذف</button>
                     </form>
                 </div>
             </td>
@@ -806,10 +848,10 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             <div class="flex flex-wrap items-center gap-2.5">
                 <form action="/admin/cache/clear" method="post" class="m-0">
                     <input type="hidden" name="csrf_token" value="{csrf_token}">
-                    <button type="submit" class="btn-press min-h-[42px] px-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-xs font-bold transition-colors cursor-pointer">پاکسازی کش ({cached_items})</button>
+                    <button type="submit" class="btn-press min-h-[42px] px-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-xs font-bold cursor-pointer">پاکسازی کش ({cached_items})</button>
                 </form>
-                <a href="/admin/backup" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-[#4b85d1]/15 hover:bg-[#4b85d1]/25 text-[#4b85d1] border border-[#4b85d1]/30 rounded-xl text-xs font-bold transition-colors">دانلود بکاپ</a>
-                <a href="/admin/logout" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-colors">خروج</a>
+                <a href="/admin/backup" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-[#4b85d1]/15 hover:bg-[#4b85d1]/25 text-[#4b85d1] border border-[#4b85d1]/30 rounded-xl text-xs font-bold">دانلود بکاپ</a>
+                <a href="/admin/logout" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold">خروج</a>
             </div>
         </header>
 
@@ -832,7 +874,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             </div>
         </section>
 
-        <!-- بخش افزودن ساب جدید با چند لینک و قوانین جایگزینی -->
+        <!-- فرم ثبت با پویانمایی ورودی دقیق -->
         <section class="surface-card p-6 rounded-3xl animate-enter stagger-2">
             <h2 class="text-base font-bold mb-4 flex items-center gap-2">
                 <svg class="w-5 h-5 text-[#4b85d1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
@@ -878,14 +920,14 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
                         <label class="block text-xs text-slate-400 mb-1.5">توکن اختصاصی لینک (اختیاری)</label>
                         <div class="flex gap-2">
                             <input type="text" name="custom_token" placeholder="خالی = خودکار" class="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1] text-left font-mono" dir="ltr">
-                            <button type="submit" class="btn-press px-6 min-h-[42px] bg-[#4b85d1] hover:bg-[#3671bf] text-white font-bold rounded-xl text-sm shrink-0 transition-colors cursor-pointer shadow-lg">ثبت ساب</button>
+                            <button type="submit" class="btn-press px-6 min-h-[42px] bg-[#4b85d1] hover:bg-[#3671bf] text-white font-bold rounded-xl text-sm shrink-0 cursor-pointer shadow-lg">ثبت ساب</button>
                         </div>
                     </div>
                 </div>
             </form>
         </section>
 
-        <!-- جدول اشتراک‌ها -->
+        <!-- لیست و جدول با افکت Stagger -->
         <section class="surface-card rounded-3xl overflow-hidden animate-enter stagger-3">
             <div class="p-5 sm:p-6 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <h2 class="text-base font-bold">لیست اشتراک‌های دیتاسنتر ({total_count})</h2>
@@ -920,7 +962,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
         </section>
     </main>
 
-    <!-- مودال ویرایش پیشرفته -->
+    <!-- مودال ویرایش مجهز به ورود ارگونومیک بدون جهش -->
     <div id="editModal" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
         <div class="surface-card rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl animate-enter" onclick="event.stopPropagation()">
             <h3 class="text-lg font-bold mb-4">ویرایش اطلاعات ساب</h3>
@@ -957,8 +999,8 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
                     <input type="text" id="edit_note" name="admin_note" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1]">
                 </div>
                 <div class="flex gap-2 pt-3">
-                    <button type="submit" class="btn-press flex-1 min-h-[44px] bg-[#4b85d1] hover:bg-[#3671bf] text-white font-bold rounded-xl text-sm transition-colors cursor-pointer">ذخیره تغییرات</button>
-                    <button type="button" onclick="closeEditModal()" class="btn-press px-5 min-h-[44px] bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-bold rounded-xl text-sm transition-colors cursor-pointer">انصراف</button>
+                    <button type="submit" class="btn-press flex-1 min-h-[44px] bg-[#4b85d1] hover:bg-[#3671bf] text-white font-bold rounded-xl text-sm cursor-pointer">ذخیره تغییرات</button>
+                    <button type="button" onclick="closeEditModal()" class="btn-press px-5 min-h-[44px] bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-bold rounded-xl text-sm cursor-pointer">انصراف</button>
                 </div>
             </form>
         </div>
@@ -1030,7 +1072,7 @@ def render_app_card(name_html: str, url: str, btn_label: str, recommended: bool 
         <div class="w-full text-center mt-3 mb-4">
             <h3 class="font-extrabold text-base tracking-wide">{name_html}</h3>
         </div>
-        <a href="{url}" target="_blank" rel="noopener noreferrer" class="btn-press w-full min-h-[40px] inline-flex items-center justify-center bg-[#4b85d1] hover:bg-[#3671bf] text-white rounded-xl text-xs font-bold transition-colors shadow-xs">{btn_label}</a>
+        <a href="{url}" target="_blank" rel="noopener noreferrer" class="btn-press w-full min-h-[40px] inline-flex items-center justify-center bg-[#4b85d1] hover:bg-[#3671bf] text-white rounded-xl text-xs font-bold shadow-xs">{btn_label}</a>
     </div>"""
 
 def render_dashboard_html(ctx: dict) -> str:
@@ -1039,7 +1081,7 @@ def render_dashboard_html(ctx: dict) -> str:
     
     online_indicator = (
         '<div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold">'
-        '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>آنلاین (در حال استفاده)</div>'
+        '<span class="w-2 h-2 rounded-full bg-emerald-500 pulse-online"></span>آنلاین (در حال استفاده)</div>'
         if ctx.get("is_online") else
         f'<div class="text-xs text-slate-400">آخرین اتصال: <span class="font-bold text-slate-300">{ctx.get("last_seen_text", "نامشخص")}</span></div>'
     )
@@ -1057,15 +1099,15 @@ def render_dashboard_html(ctx: dict) -> str:
         conf_items = ""
         for idx, c in enumerate(ctx["configs"]):
             conf_items += f"""
-            <div class="config-item surface-card hover-lift group relative p-3.5 rounded-2xl transition-all duration-200" data-confname="{c['name'].lower()} {c['proto'].lower()}">
+            <div class="config-item surface-card hover-lift group relative p-3.5 rounded-2xl" data-confname="{c['name'].lower()} {c['proto'].lower()}">
                 <div class="flex items-center gap-3">
                     <span class="px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase bg-[#4b85d1]/15 text-[#4b85d1] border border-[#4b85d1]/25 shrink-0">{c['proto']}</span>
                     <div dir="ltr" class="text-sm sm:text-base font-semibold flex-1 min-w-0 truncate text-right">{c['name']}</div>
                     <div class="flex gap-1.5 shrink-0">
-                        <button type="button" onclick="copyConfig({idx}, this)" aria-label="کپی کانفیگ" class="btn-press touch-target rounded-xl transition-all cursor-pointer bg-slate-200/70 dark:bg-zinc-800/90 hover:bg-[#4b85d1] hover:text-white" title="کپی کانفیگ">
+                        <button type="button" onclick="copyConfig({idx}, this)" aria-label="کپی کانفیگ" class="btn-press touch-target rounded-xl cursor-pointer bg-slate-200/70 dark:bg-zinc-800/90 hover:bg-[#4b85d1] hover:text-white" title="کپی کانفیگ">
                             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
                         </button>
-                        <button type="button" onclick="showConfigQR({idx})" aria-label="نمایش کد QR" class="btn-press touch-target rounded-xl bg-slate-200/70 dark:bg-zinc-800/90 hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer" title="کد QR">
+                        <button type="button" onclick="showConfigQR({idx})" aria-label="نمایش کد QR" class="btn-press touch-target rounded-xl bg-slate-200/70 dark:bg-zinc-800/90 hover:bg-slate-300 dark:hover:bg-zinc-700 cursor-pointer" title="کد QR">
                             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 12v4a1 1 0 0 1-1 1h-4"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M17 8V7"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M7 17h.01"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><rect x="7" y="7" width="5" height="5" rx="1"></rect></svg>
                         </button>
                     </div>
@@ -1145,7 +1187,7 @@ def render_dashboard_html(ctx: dict) -> str:
                             <circle cx="50%" cy="50%" r="45%" stroke="currentColor" stroke-width="12" fill="none" class="text-slate-200/70 dark:text-zinc-800"></circle>
                             <circle cx="50%" cy="50%" r="45%" stroke="currentColor" stroke-width="12" fill="none"
                                 stroke-dasharray="440" stroke-dashoffset="{ctx['dashoffset']}"
-                                class="text-[#4b85d1] transition-all duration-1000 ease-out" stroke-linecap="round"></circle>
+                                class="text-[#4b85d1]" style="transition: stroke-dashoffset 800ms var(--ease-out);" stroke-linecap="round"></circle>
                         </svg>
                         <div class="absolute inset-0 flex flex-col items-center justify-center">
                             <span class="text-2xl sm:text-3xl font-black">{ctx['percent']}%</span>
@@ -1183,7 +1225,7 @@ def render_dashboard_html(ctx: dict) -> str:
                     <div class="text-xs opacity-70 mb-1">آخرین بروزرسانی</div>
                     <div dir="ltr" class="flex items-center justify-end gap-2">
                         <span class="text-xs sm:text-sm font-semibold">{ctx['now_jalali']}</span>
-                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
+                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 pulse-online"></span>
                     </div>
                 </div>
             </div>
@@ -1195,10 +1237,10 @@ def render_dashboard_html(ctx: dict) -> str:
                 افزودن خودکار اشتراک به نرم‌افزار
             </div>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <a href="{hiddify_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center transition-all">افزودن به Hiddify</a>
-                <a href="{v2rayng_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center transition-all">افزودن به v2rayNG</a>
-                <a href="{singbox_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center transition-all">افزودن به Sing-box</a>
-                <a href="{streisand_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center transition-all">افزودن به Streisand</a>
+                <a href="{hiddify_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center">افزودن به Hiddify</a>
+                <a href="{v2rayng_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center">افزودن به v2rayNG</a>
+                <a href="{singbox_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center">افزودن به Sing-box</a>
+                <a href="{streisand_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center">افزودن به Streisand</a>
             </div>
         </div>
 
@@ -1211,14 +1253,14 @@ def render_dashboard_html(ctx: dict) -> str:
                     </h2>
                     <div class="flex items-center gap-2">
                         <input type="text" id="confSearch" oninput="filterConfigs()" placeholder="جستجوی سرور..." class="surface-card rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#4b85d1] w-36 sm:w-48">
-                        <button type="button" onclick="copyAll(this)" class="btn-press min-h-[42px] cursor-pointer flex items-center gap-2 px-4 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 bg-[#4b85d1] hover:bg-[#3671bf] text-white shadow-md">
+                        <button type="button" onclick="copyAll(this)" class="btn-press min-h-[42px] cursor-pointer flex items-center gap-2 px-4 text-xs sm:text-sm font-bold rounded-xl bg-[#4b85d1] hover:bg-[#3671bf] text-white shadow-md">
                             <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
                             <span>کپی همه</span>
                         </button>
                     </div>
                 </div>
 
-                <div class="p-4 rounded-2xl border-2 border-[#4b85d1]/50 bg-[#4b85d1]/10 transition-all duration-200">
+                <div class="p-4 rounded-2xl border-2 border-[#4b85d1]/50 bg-[#4b85d1]/10">
                     <div class="flex items-center gap-3">
                         <span class="px-2.5 py-1 rounded-lg text-xs font-black bg-[#4b85d1] text-white shrink-0">SUB</span>
                         <div class="flex-1 min-w-0">
@@ -1226,10 +1268,10 @@ def render_dashboard_html(ctx: dict) -> str:
                             <div class="text-[11px] opacity-75 truncate font-mono mt-0.5" dir="ltr">{ctx['sub_url']}</div>
                         </div>
                         <div class="flex gap-2 shrink-0">
-                            <button type="button" onclick="copySubUrl(this)" aria-label="کپی لینک اشتراک" class="btn-press touch-target rounded-xl transition-all cursor-pointer bg-white dark:bg-zinc-800 hover:bg-[#4b85d1] hover:text-white shadow-xs" title="کپی لینک ساب">
+                            <button type="button" onclick="copySubUrl(this)" aria-label="کپی لینک اشتراک" class="btn-press touch-target rounded-xl cursor-pointer bg-white dark:bg-zinc-800 hover:bg-[#4b85d1] hover:text-white shadow-xs" title="کپی لینک ساب">
                                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
                             </button>
-                            <button type="button" onclick="showSubQR()" aria-label="نمایش کد QR اشتراک" class="btn-press touch-target rounded-xl bg-white dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-all cursor-pointer shadow-xs" title="کد QR">
+                            <button type="button" onclick="showSubQR()" aria-label="نمایش کد QR اشتراک" class="btn-press touch-target rounded-xl bg-white dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 cursor-pointer shadow-xs" title="کد QR">
                                 <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 12v4a1 1 0 0 1-1 1h-4"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M17 8V7"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M7 17h.01"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><rect x="7" y="7" width="5" height="5" rx="1"></rect></svg>
                             </button>
                         </div>
@@ -1285,16 +1327,16 @@ def render_dashboard_html(ctx: dict) -> str:
                 <div class="flex items-center gap-3 text-sm opacity-75">
                     <p dir="ltr" class="font-bold text-[#4b85d1] truncate">{safe_brand}</p>
                     <div class="flex items-center gap-1.5">
-                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        <span class="w-2 h-2 rounded-full bg-emerald-500 pulse-online"></span>
                         <span class="text-xs">سرور ابری</span>
                     </div>
                 </div>
             </div>
             <div class="flex items-center gap-2">
-                <button type="button" onclick="location.reload()" aria-label="بروزرسانی اطلاعات" class="btn-press touch-target rounded-xl surface-card hover:border-[#4b85d1] hover:text-[#4b85d1] transition-all cursor-pointer" title="بروزرسانی">
+                <button type="button" onclick="location.reload()" aria-label="بروزرسانی اطلاعات" class="btn-press touch-target rounded-xl surface-card hover:border-[#4b85d1] hover:text-[#4b85d1] cursor-pointer" title="بروزرسانی">
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>
                 </button>
-                <button type="button" onclick="document.documentElement.classList.toggle('dark')" aria-label="تغییر تم" class="btn-press touch-target rounded-xl surface-card hover:border-[#4b85d1] hover:text-[#4b85d1] transition-all cursor-pointer" title="تغییر تم">
+                <button type="button" onclick="document.documentElement.classList.toggle('dark')" aria-label="تغییر تم" class="btn-press touch-target rounded-xl surface-card hover:border-[#4b85d1] hover:text-[#4b85d1] cursor-pointer" title="تغییر تم">
                     <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>
                 </button>
             </div>
@@ -1306,7 +1348,7 @@ def render_dashboard_html(ctx: dict) -> str:
     <footer dir="rtl" class="relative w-full pb-8 pt-4 px-6 z-10">
         <div class="container mx-auto max-w-5xl flex justify-center">
             <div class="flex flex-col items-center gap-2.5">
-                <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" class="btn-press min-h-[42px] inline-flex items-center gap-2 px-5 rounded-xl bg-[#4b85d1]/10 hover:bg-[#4b85d1]/20 text-[#4b85d1] text-xs font-bold transition-all border border-[#4b85d1]/25">
+                <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" class="btn-press min-h-[42px] inline-flex items-center gap-2 px-5 rounded-xl bg-[#4b85d1]/10 hover:bg-[#4b85d1]/20 text-[#4b85d1] text-xs font-bold border border-[#4b85d1]/25">
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                     <span>پشتیبانی تلگرام:</span>
                     <span class="en-digits font-bold">@DARK_WIKI20</span>
@@ -1321,7 +1363,7 @@ def render_dashboard_html(ctx: dict) -> str:
         <div class="surface-card p-6 rounded-3xl shadow-2xl max-w-xs w-full flex flex-col items-center text-center animate-enter" onclick="event.stopPropagation()">
             <h3 class="font-bold text-sm mb-4">اسکن کد QR</h3>
             <img id="qrImage" src="" alt="QR Code" width="208" height="208" class="w-52 h-52 rounded-2xl mb-4 p-2.5 bg-white shadow-inner">
-            <button type="button" onclick="closeQR()" class="btn-press w-full min-h-[44px] bg-slate-200 dark:bg-zinc-800 hover:opacity-90 text-xs font-bold rounded-xl transition-opacity cursor-pointer">بستن</button>
+            <button type="button" onclick="closeQR()" class="btn-press w-full min-h-[44px] bg-slate-200 dark:bg-zinc-800 text-xs font-bold rounded-xl cursor-pointer">بستن</button>
         </div>
     </div>
 
@@ -1400,7 +1442,7 @@ def render_dashboard_html(ctx: dict) -> str:
 </body>
 </html>"""
 
-# ----------------- مسیرهای API و صفحات -----------------
+# ----------------- مسیرهای FastAPI -----------------
 @app.get("/")
 async def root(request: Request):
     user_agent = request.headers.get("user-agent", "")
@@ -1627,7 +1669,6 @@ async def add_profile(request: Request):
     token = safe_custom if safe_custom else secrets.token_hex(6)
     created_at = datetime.now().strftime("%Y-%m-%d %H:%M")
 
-    # بررسی امنیت لینک‌ها
     urls = [u.strip() for u in upstream_url.splitlines() if u.strip()]
     if name and urls and all(is_safe_upstream_url(u) for u in urls):
         with get_db() as conn:
