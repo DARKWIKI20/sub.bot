@@ -11,6 +11,7 @@ import socket
 import ipaddress
 import urllib.parse
 import re
+import traceback
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 import httpx
@@ -33,8 +34,13 @@ ADMIN_SECRET_PATH = os.getenv("ADMIN_SECRET_PATH", "manage-panel-x92").strip("/"
 SECRET_KEY = hashlib.sha256(f"{ADMIN_PASSWORD}_datacenter_v3_salt".encode()).digest()
 WEBHOOK_SECRET = hashlib.sha256(f"{BOT_TOKEN}_tg_webhook".encode()).hexdigest()[:32] if BOT_TOKEN else ""
 
-DATA_DIR = "/data" if os.path.exists("/data") else "."
-DB_FILE = os.path.join(DATA_DIR, "datacenter_subs.db")
+# انتخاب مسیر دیتابیس با بررسی دقیق دسترسی نوشتن
+def get_safe_db_path():
+    if os.path.exists("/data") and os.access("/data", os.W_OK):
+        return "/data/datacenter_subs.db"
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "datacenter_subs.db")
+
+DB_FILE = get_safe_db_path()
 COOKIE_NAME = "admin_session"
 SESSION_TTL = 86400 * 7
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
@@ -90,24 +96,29 @@ def init_db():
 init_db()
 
 # ----------------- چرخه حیات و شبکه -----------------
+async def get_http_client() -> httpx.AsyncClient:
+    global http_client
+    if http_client is None or http_client.is_closed:
+        limits = httpx.Limits(max_keepalive_connections=15, max_connections=50)
+        http_client = httpx.AsyncClient(timeout=10.0, follow_redirects=False, verify=False, limits=limits)
+    return http_client
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global http_client
-    limits = httpx.Limits(max_keepalive_connections=15, max_connections=50)
-    http_client = httpx.AsyncClient(timeout=10.0, follow_redirects=False, verify=False, limits=limits)
-    
+    client = await get_http_client()
     if BOT_TOKEN and PUBLIC_URL != "localhost:8000":
         clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
         webhook_url = f"https://{clean_domain}/webhook"
         try:
-            await http_client.post(
+            await client.post(
                 f"{TELEGRAM_API}/setWebhook",
                 json={"url": webhook_url, "secret_token": WEBHOOK_SECRET}
             )
         except Exception:
             pass
     yield
-    await http_client.aclose()
+    if http_client and not http_client.is_closed:
+        await http_client.aclose()
 
 app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.add_middleware(GZipMiddleware, minimum_size=500)
@@ -119,6 +130,22 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
+
+# مدیریت خطای سراسری جهت جلوگیری از خاموشی ۵۰۰
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    err_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    print(f"CRITICAL ERROR on {request.url.path}: {err_str}")
+    return HTMLResponse(
+        content=f"""
+        <div style="font-family: sans-serif; padding: 25px; background: #07090e; color: #f43f5e; min-height: 100vh;">
+            <h2 style="margin-top:0;">خطای غیرمنتظره سرور (۵۰۰)</h2>
+            <p style="color: #cbd5e1; font-size: 13px;">سرور هنگام پردازش با این خطا مواجه شد:</p>
+            <pre style="background: #11131a; color: #f87171; padding: 15px; border-radius: 12px; font-size: 12px; overflow-x: auto; border: 1px solid rgba(255,255,255,0.08);">{html.escape(err_str)}</pre>
+        </div>
+        """,
+        status_code=500
+    )
 
 # ----------------- توابع امنیتی -----------------
 def create_session_token() -> str:
@@ -198,85 +225,69 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- محاسبات تاریخ و ترافیک -----------------
+# ----------------- محاسبات تاریخ و ترافیک ایمن -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
     return str(s).translate(PERSIAN_DIGITS)
 
-def parse_datetime_to_timestamp(val) -> float:
+def safe_parse_timestamp(val) -> float:
     if not val:
         return 0.0
     if isinstance(val, (int, float)):
-        return float(val)
-    val_str = str(val).strip()
-    try:
-        return float(val_str)
-    except ValueError:
-        pass
-
-    try:
-        clean_iso = val_str.replace("Z", "+00:00")
-        dt = datetime.fromisoformat(clean_iso)
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.timestamp()
-    except Exception:
-        pass
-
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S"):
+        ts = float(val)
+    else:
+        val_str = str(val).strip()
         try:
-            dt = datetime.strptime(val_str, fmt).replace(tzinfo=timezone.utc)
-            return dt.timestamp()
-        except Exception:
-            continue
-    return 0.0
-
-def format_relative_time(past_timestamp: float) -> str:
-    try:
-        diff = int(time.time() - past_timestamp)
-        if diff < 0:
-            return "هم‌اکنون"
-        if diff < 60:
-            return f"{to_persian_num(str(diff))} ثانیه پیش"
-        minutes = diff // 60
-        if minutes < 60:
-            return f"{to_persian_num(str(minutes))} دقیقه پیش"
-        hours = minutes // 60
-        if hours < 24:
-            return f"{to_persian_num(str(hours))} ساعت پیش"
-        days = hours // 24
-        if days < 7:
-            return f"{to_persian_num(str(days))} روز پیش"
-        weeks = days // 7
-        if weeks < 4:
-            return f"{to_persian_num(str(weeks))} هفته پیش"
-        months = days // 30
-        return f"{to_persian_num(str(months))} ماه پیش"
-    except Exception:
-        return "نامشخص"
+            ts = float(val_str)
+        except ValueError:
+            ts = 0.0
+            for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S"):
+                try:
+                    dt = datetime.strptime(val_str.split(".")[0].replace("Z", ""), fmt)
+                    ts = dt.replace(tzinfo=timezone.utc).timestamp()
+                    break
+                except Exception:
+                    continue
+    if ts > 1e11:  # تشخیص میلی‌ثانیه بودن تایم‌استمپ
+        ts = ts / 1000.0
+    return max(0.0, ts)
 
 def gregorian_to_jalali(gy, gm, gd):
-    g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
-    jy = 0 if gy <= 1600 else 979
-    gy -= 621 if gy <= 1600 else 1600
-    gy2 = (gm > 2) and (gy + 1) or gy
-    days = (365 * gy) + ((gy2 + 3) // 4) - ((gy2 + 99) // 100) + ((gy2 + 399) // 400) - 80 + gd + g_d_m[gm - 1]
-    jy += 33 * (days // 12053)
-    days %= 12053
-    jy += 4 * (days // 1461)
-    days %= 1461
-    jy += (days - 1) // 365
-    if days > 0:
-        days = (days - 1) % 365
-    jm = (days < 186) and (1 + days // 31) or (7 + (days - 186) // 30)
-    jd = 1 + ((days < 186) and (days % 31) or ((days - 186) % 30))
-    return jy, jm, jd
+    try:
+        g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334]
+        jy = 0 if gy <= 1600 else 979
+        gy -= 621 if gy <= 1600 else 1600
+        gy2 = (gm > 2) and (gy + 1) or gy
+        days = (365 * gy) + ((gy2 + 3) // 4) - ((gy2 + 99) // 100) + ((gy2 + 399) // 400) - 80 + gd + g_d_m[gm - 1]
+        jy += 33 * (days // 12053)
+        days %= 12053
+        jy += 4 * (days // 1461)
+        days %= 1461
+        jy += (days - 1) // 365
+        if days > 0:
+            days = (days - 1) % 365
+        jm = (days < 186) and (1 + days // 31) or (7 + (days - 186) // 30)
+        jd = 1 + ((days < 186) and (days % 31) or ((days - 186) % 30))
+        return jy, jm, jd
+    except Exception:
+        return 1405, 1, 1
 
 def now_jalali_str() -> str:
     now_dt = datetime.now()
     jy, jm, jd = gregorian_to_jalali(now_dt.year, now_dt.month, now_dt.day)
     return to_persian_num(f"{jy}/{jm:02d}/{jd:02d}, {now_dt.strftime('%H:%M')}")
+
+def format_timestamp_to_jalali(ts_val) -> str:
+    ts = safe_parse_timestamp(ts_val)
+    if ts <= 0:
+        return "نامحدود"
+    try:
+        dt = datetime.fromtimestamp(ts)
+        jy, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
+        return to_persian_num(f"{jy}/{jm:02d}/{jd:02d}, {dt.strftime('%H:%M')}")
+    except Exception:
+        return "نامحدود"
 
 def parse_user_info(header_val: str, all_headers: dict = None) -> dict:
     data = {}
@@ -305,8 +316,9 @@ def parse_user_info(header_val: str, all_headers: dict = None) -> dict:
 async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
     try:
         clean_url = upstream_url.rstrip("/")
+        client = await get_http_client()
         try:
-            res_info = await http_client.get(
+            res_info = await client.get(
                 f"{clean_url}/info",
                 headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
                 timeout=5.0
@@ -316,11 +328,9 @@ async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
                 if isinstance(data, dict):
                     online_val = data.get("online_at") or data.get("last_online") or data.get("last_use")
                     if online_val:
-                        ts = parse_datetime_to_timestamp(online_val)
+                        ts = safe_parse_timestamp(online_val)
                         if ts > 0:
-                            dt = datetime.fromtimestamp(ts)
-                            jy, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
-                            formatted_dt = to_persian_num(f"{jy}/{jm:02d}/{jd:02d}, {dt.strftime('%H:%M')}")
+                            formatted_dt = format_timestamp_to_jalali(ts)
                             diff = time.time() - ts
                             return (0 <= diff <= 180), formatted_dt
                     if data.get("is_online") is True or str(data.get("status", "")).lower() == "online":
@@ -329,7 +339,7 @@ async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
             pass
 
         try:
-            res_html = await http_client.get(
+            res_html = await client.get(
                 upstream_url,
                 headers={"Accept": "text/html", "User-Agent": "Mozilla/5.0"},
                 timeout=5.0
@@ -341,11 +351,9 @@ async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
                     match_online = re.search(r'"(?:last_online|last_use|online_at)"\s*:\s*([0-9]+(?:\.[0-9]+)?)', html_text)
                 
                 if match_online:
-                    ts = parse_datetime_to_timestamp(match_online.group(1))
+                    ts = safe_parse_timestamp(match_online.group(1))
                     if ts > 0:
-                        dt = datetime.fromtimestamp(ts)
-                        jy, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
-                        formatted_dt = to_persian_num(f"{jy}/{jm:02d}/{jd:02d}, {dt.strftime('%H:%M')}")
+                        formatted_dt = format_timestamp_to_jalali(ts)
                         diff = time.time() - ts
                         return (0 <= diff <= 180), formatted_dt
         except Exception:
@@ -361,11 +369,9 @@ def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
         now = time.time()
         for key in ("last_online", "last-online", "last_use", "last-use", "online_at"):
             if key in info:
-                ts = parse_datetime_to_timestamp(info[key])
+                ts = safe_parse_timestamp(info[key])
                 if ts > 0:
-                    dt = datetime.fromtimestamp(ts)
-                    jy, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
-                    formatted_dt = to_persian_num(f"{jy}/{jm:02d}/{jd:02d}, {dt.strftime('%H:%M')}")
+                    formatted_dt = format_timestamp_to_jalali(ts)
                     diff = now - ts
                     return (0 <= diff <= 180), formatted_dt
 
@@ -378,14 +384,26 @@ def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
     except Exception:
         return False, "نامشخص"
 
-def apply_fake_traffic(upload: int, download: int, total: int, fake_total_gb: float) -> tuple[int, int, int]:
-    if not fake_total_gb or fake_total_gb <= 0:
+def apply_fake_traffic(upload, download, total, fake_total_gb) -> tuple[int, int, int]:
+    try:
+        upload = int(float(upload or 0))
+        download = int(float(download or 0))
+        total = int(float(total or 0))
+        fake_total_gb = float(fake_total_gb or 0.0)
+    except Exception:
+        return 0, 0, 0
+
+    if fake_total_gb <= 0:
         return upload, download, total
     fake_total_bytes = int(fake_total_gb * (1024 ** 3))
     multiplier = (fake_total_bytes / total) if total > 0 else 1.0
     return int(upload * multiplier), int(download * multiplier), fake_total_bytes
 
-def format_bytes(size_bytes: int) -> str:
+def format_bytes(size_bytes) -> str:
+    try:
+        size_bytes = float(size_bytes or 0)
+    except Exception:
+        size_bytes = 0.0
     if size_bytes >= 1024 ** 3:
         return f"{size_bytes / (1024 ** 3):.2f} GB"
     return f"{size_bytes / (1024 ** 2):.2f} MB"
@@ -466,8 +484,9 @@ async def get_cached_sub_data(token: str, upstream_url: str):
 
     headers_req = {"User-Agent": "v2rayNG/1.8.12"}
     current_url = upstream_url
+    client = await get_http_client()
     for _ in range(3):
-        res = await http_client.get(current_url, headers=headers_req)
+        res = await client.get(current_url, headers=headers_req)
         if res.status_code in (301, 302, 303, 307, 308):
             loc = res.headers.get("location", "")
             next_url = urllib.parse.urljoin(current_url, loc)
@@ -550,7 +569,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             border-radius: 1.25rem;
         }
 
-        /* اسکرول‌بار شیشه‌ای مات و یکپارچه (Liquid Glass Scrollbar) */
+        /* اسکرول‌بار شیشه‌ای مایع (Liquid Glass Scrollbar) */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -559,15 +578,15 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             background: transparent;
         }
         ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.18);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
+            background: rgba(255, 255, 255, 0.16);
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
             border-radius: 9999px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.35);
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.32);
+            background: rgba(255, 255, 255, 0.28);
             border-color: rgba(255, 255, 255, 0.25);
         }
         * {
@@ -617,7 +636,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                 <div className="min-h-screen p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto space-y-6">
                     <main className="space-y-6">
                         
-                        {/* ۱. هدر شیشه‌ای با دکمه تازه‌سازی و منوی دسترسی سریع */}
+                        {/* ۱. هدر شیشه‌ای با دکمه تازه‌سازی و منوی گزینه‌ها */}
                         <header className="p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl flex justify-between items-center shadow-lg">
                             <div>
                                 <h1 className="text-lg sm:text-xl font-extrabold tracking-wide">{DATA.brand_name}</h1>
@@ -640,10 +659,10 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </header>
 
-                        {/* ۲. کارت‌های شاخص عملکرد و گیج مصرف (مطابق طرح ارسالی) */}
+                        {/* ۲. کارت‌های اصلی دقیقا طبق ساختار تصویر ارسالی */}
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                             
-                            {/* کارت بزرگ سمت راست: وضعیت، روزشمار، گیج و حجم‌ها */}
+                            {/* کارت بزرگ وضعیت، روزشمار، گیج و تفکیک حجم‌ها */}
                             <div className="lg:col-span-2 stats-box p-6 flex flex-col justify-between shadow-xl">
                                 <div className="flex justify-between items-start mb-6">
                                     <div className="text-left">
@@ -664,7 +683,6 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 </div>
 
                                 <div className="flex items-center justify-between gap-6">
-                                    {/* ستون متن و ارقام مصرف */}
                                     <div className="space-y-3 flex-1">
                                         <div className="flex justify-between items-center text-sm">
                                             <span className="mono-num font-bold text-slate-100 text-base">{DATA.total_quota}</span>
@@ -717,7 +735,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
 
                         </div>
 
-                        {/* ۳. نوار اختصاصی و منظم لینک ساب */}
+                        {/* ۳. نوار شکیل و بهینه‌شده کپی ساب */}
                         <div className="stats-box p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4 border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-lg">
                             <div className="flex items-center gap-3 w-full md:w-auto min-w-0">
                                 <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 flex items-center justify-center text-blue-400 shrink-0">
@@ -740,7 +758,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </div>
 
-                        {/* ۴. فیلتر و جستجو با SegmentedControl و Input */}
+                        {/* ۴. فیلتر و جستجو با Glisse */}
                         <div className="space-y-3">
                             <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                                 <div dir="ltr" className="w-full sm:w-auto">
@@ -1218,6 +1236,151 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>"""
 
+def render_login_html(admin_path: str, error: str = None) -> str:
+    err_box = f'<div class="p-3 mb-4 rounded-xl text-xs font-semibold text-center border border-rose-500/30 bg-rose-500/15 text-rose-400">{html.escape(error)}</div>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="fa" dir="rtl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ورود مدیریت دیتاسنتر</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
+    <style>{ADMIN_PANEL_CSS}</style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="glass-container w-full max-w-sm p-6 sm:p-8">
+        <h1 class="text-base font-bold text-center mb-1">احراز هویت سرور</h1>
+        <p class="text-xs text-slate-400 text-center mb-6">کنترل پنل مرکزی دیتاسنتر</p>
+        {err_box}
+        <form action="/{admin_path}/login" method="post" class="space-y-4">
+            <div>
+                <label for="admin_pass" class="block text-xs text-slate-400 mb-1.5 font-medium">رمز عبور امنیتی</label>
+                <input id="admin_pass" type="password" name="password" required autofocus class="glass-input mono-num text-left">
+            </div>
+            <button type="submit" class="btn-glass btn-primary w-full py-2.5">ورود به سیستم</button>
+        </form>
+    </div>
+</body>
+</html>"""
+
+def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -> str:
+    total_count = len(profiles)
+    blocked_count = sum(1 for p in profiles if p["is_blocked"])
+    active_count = total_count - blocked_count
+    total_hits = sum((p["sub_hits"] or 0) for p in profiles)
+    cached_items = len(sub_cache)
+
+    rows = ""
+    for p in profiles:
+        safe_name = html.escape(str(p["name"] or ""))
+        safe_token = html.escape(str(p["token"] or ""))
+        safe_note = html.escape(str(p["admin_note"] or ""))
+        safe_notice = html.escape(str(p["custom_notice"] or ""))
+        hits = p["sub_hits"] or 0
+        last_fetch = html.escape(str(p["last_sub_fetch"] or "بدون اتصال"))
+        fake_val = p["fake_total_gb"] or 0
+
+        cached_data = sub_cache.get(p["token"])
+        if cached_data and cached_data.get("info"):
+            info = cached_data["info"]
+            u, d, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_val)
+            traffic_badge = f"<span class='text-xs mono-num text-slate-200'>{format_bytes(u+d)} / {format_bytes(tot)}</span>"
+            
+            if cached_data.get("is_online"):
+                online_badge = '<span class="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>متصل</span>'
+            else:
+                last_s = cached_data.get("last_seen_text", "نامشخص")
+                online_badge = f'<span class="text-xs text-slate-400">{last_s}</span>'
+        else:
+            traffic_badge = "<span class='text-xs text-slate-500'>—</span>"
+            online_badge = "<span class='text-xs text-slate-500'>—</span>"
+
+        status_badge = (
+            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-400">مسدود</span>'
+            if p["is_blocked"] else
+            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">فعال</span>'
+        )
+        fake_label = f"<span class='mono-num text-xs text-blue-400 font-bold'>{fake_val:g} GB</span>" if fake_val > 0 else "<span class='text-slate-500 text-xs'>واقعی</span>"
+        
+        btn_class = "btn-glass text-emerald-400 border-emerald-500/30" if p["is_blocked"] else "btn-glass text-amber-400 border-amber-500/30"
+        btn_text = "فعال‌سازی" if p["is_blocked"] else "مسدود"
+        
+        p_json = html.escape(json.dumps({
+            "token": str(p["token"]),
+            "name": str(p["name"]),
+            "upstream_url": str(p["upstream_url"]),
+            "fake_total_gb": float(fake_val),
+            "custom_notice": str(p["custom_notice"] or ""),
+            "admin_note": str(p["admin_note"] or "")
+        }))
+
+        dash_url = f"https://{domain}/d/{safe_token}"
+        sub_url = f"https://{domain}/sub/{safe_token}"
+        note_html = f'<div class="text-[11px] text-amber-400/80 mt-1 font-mono leading-tight">{safe_note}</div>' if safe_note else ''
+        notice_indicator = '<span class="inline-block mr-1 text-[10px] px-1.5 py-0.2 rounded border border-blue-400/30 bg-blue-500/15 text-blue-300">اعلان</span>' if safe_notice else ''
+
+        rows += f"""
+        <tr class="profile-row border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors" data-name="{safe_name.lower()} {safe_token.lower()} {safe_note.lower()}" data-status="{'blocked' if p['is_blocked'] else 'active'}">
+            <td class="p-3.5 whitespace-nowrap">
+                <div class="font-bold text-sm text-slate-200">{safe_name} {notice_indicator}</div>
+                {note_html}
+            </td>
+            <td class="p-3.5 whitespace-nowrap">
+                <div class="flex items-center gap-1.5">
+                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn-glass px-2.5 py-1 text-xs">داشبورد</button>
+                    <button type="button" onclick="copyText('{sub_url}', 'لینک اشتراک کپی شد')" class="btn-glass px-2.5 py-1 text-xs">ساب</button>
+                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn-glass p-1.5" title="QR Code">
+                        <svg class="w-3.5 h-3.5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    </button>
+                </div>
+            </td>
+            <td class="p-3.5 whitespace-nowrap text-center">{online_badge}</td>
+            <td class="p-3.5 whitespace-nowrap text-center">{fake_label}</td>
+            <td class="p-3.5 whitespace-nowrap text-center">{traffic_badge}</td>
+            <td class="p-3.5 whitespace-nowrap">
+                <div class="text-xs font-semibold mono-num text-slate-300">{hits} بار</div>
+                <div class="text-[11px] text-slate-500 mt-0.5">{last_fetch}</div>
+            </td>
+            <td class="p-3.5 whitespace-nowrap text-center">{status_badge}</td>
+            <td class="p-3.5 whitespace-nowrap text-left">
+                <div class="flex justify-end items-center gap-1.5">
+                    <button type="button" onclick="openEditModal({p_json})" class="btn-glass px-2.5 py-1 text-xs">ویرایش</button>
+                    <form action="/{admin_path}/profiles/{safe_token}/refresh-cache" method="post" class="m-0">
+                        <input type="hidden" name="csrf_token" value="{csrf_token}">
+                        <button type="submit" class="btn-glass p-1.5 text-slate-300" title="تازه‌سازی کش">
+                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+                        </button>
+                    </form>
+                    <form action="/{admin_path}/profiles/{safe_token}/toggle-block" method="post" class="m-0">
+                        <input type="hidden" name="csrf_token" value="{csrf_token}">
+                        <button type="submit" class="btn-glass px-2.5 py-1 text-xs {btn_class}">{btn_text}</button>
+                    </form>
+                    <form action="/{admin_path}/profiles/{safe_token}/delete" method="post" class="m-0" onsubmit="return confirm('تایید حذف نهایی ساب؟');">
+                        <input type="hidden" name="csrf_token" value="{csrf_token}">
+                        <button type="submit" class="btn-glass btn-danger px-2.5 py-1 text-xs">حذف</button>
+                    </form>
+                </div>
+            </td>
+        </tr>"""
+
+    if not rows:
+        rows = '<tr><td colspan="8" class="p-8 text-center text-slate-500 text-xs">هنوز هیچ اشتراکی ساخته نشده است.</td></tr>'
+
+    return (
+        ADMIN_HTML_TEMPLATE
+        .replace("__DOMAIN__", domain)
+        .replace("__ADMIN_PATH__", admin_path)
+        .replace("__CSRF_TOKEN__", csrf_token)
+        .replace("__CACHED_ITEMS__", str(cached_items))
+        .replace("__TOTAL_COUNT__", str(total_count))
+        .replace("__ACTIVE_COUNT__", str(active_count))
+        .replace("__BLOCKED_COUNT__", str(blocked_count))
+        .replace("__TOTAL_HITS__", str(total_hits))
+        .replace("__ROWS__", rows)
+        .replace("__CSS__", ADMIN_PANEL_CSS)
+    )
+
 # ----------------- مسیرهای اصلی سرور (Routes) -----------------
 @app.get("/")
 async def root():
@@ -1240,14 +1403,14 @@ async def get_user_sub(token: str):
 
     try:
         sub_data = await get_cached_sub_data(token, profile["upstream_url"])
-        info = sub_data["info"]
+        info = sub_data.get("info", {})
         fake_gb = profile["fake_total_gb"] or 0
         
         if info and fake_gb > 0:
             up, down, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_gb)
-            user_info = f"upload={up}; download={down}; total={tot}; expire={info.get('expire', 0)}"
+            user_info = f"upload={up}; download={down}; total={tot}; expire={int(safe_parse_timestamp(info.get('expire', 0)))}"
         else:
-            user_info = sub_data["raw_userinfo"]
+            user_info = str(sub_data.get("raw_userinfo", ""))
     except Exception:
         return Response(content="", status_code=502)
 
@@ -1284,13 +1447,13 @@ async def user_dashboard(request: Request, token: str):
             sub_data = await get_cached_sub_data(token, profile["upstream_url"])
             info = sub_data.get("info", {})
             configs = sub_data.get("configs", [])
-            is_online = sub_data.get("is_online", False)
-            last_seen_text = sub_data.get("last_seen_text", "نامشخص")
+            is_online = bool(sub_data.get("is_online", False))
+            last_seen_text = str(sub_data.get("last_seen_text", "نامشخص"))
             
             raw_up = info.get("upload", 0)
             raw_down = info.get("download", 0)
             raw_total = info.get("total", 0)
-            expire_ts = info.get("expire", 0)
+            expire_ts = safe_parse_timestamp(info.get("expire", 0))
             
             fake_gb = profile["fake_total_gb"] or 0
             upload, download, total_quota = apply_fake_traffic(raw_up, raw_down, raw_total, fake_gb)
@@ -1303,30 +1466,30 @@ async def user_dashboard(request: Request, token: str):
     percent = int((used_traffic / total_quota * 100)) if total_quota > 0 else 0
     percent = min(100, max(0, percent))
 
-    days_left = max(0, int((expire_ts - time.time()) // 86400)) if expire_ts > 0 else "نامحدود"
-    expire_jalali = "نامحدود"
+    # محاسبه ایمن روزشمار انقضا
+    days_left = "نامحدود"
     if expire_ts > 0:
-        dt = datetime.fromtimestamp(expire_ts)
-        jy, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
-        expire_jalali = to_persian_num(f"{jy}/{jm:02d}/{jd:02d}, {dt.strftime('%H:%M')}")
+        diff_days = int((expire_ts - time.time()) // 86400)
+        days_left = str(max(0, diff_days))
 
+    expire_jalali = format_timestamp_to_jalali(expire_ts)
     clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
     sub_url = f"https://{clean_domain}/sub/{token}"
 
     ctx = {
-        "brand_name": profile["name"],
-        "custom_notice": profile["custom_notice"] or "",
-        "is_blocked": is_blocked,
-        "is_online": is_online,
-        "last_seen_text": last_seen_text,
-        "percent": percent,
+        "brand_name": str(profile["name"] or ""),
+        "custom_notice": str(profile["custom_notice"] or ""),
+        "is_blocked": bool(is_blocked),
+        "is_online": bool(is_online),
+        "last_seen_text": str(last_seen_text),
+        "percent": int(percent),
         "total_quota": format_bytes(total_quota),
         "used_traffic": format_bytes(used_traffic),
         "remaining_traffic": format_bytes(remaining),
-        "days_left": days_left,
-        "expire_date": expire_jalali,
+        "days_left": str(days_left),
+        "expire_date": str(expire_jalali),
         "now_jalali": now_jalali_str(),
-        "sub_url": sub_url,
+        "sub_url": str(sub_url),
         "configs": configs
     }
     return HTMLResponse(content=render_dashboard_html(ctx))
@@ -1648,7 +1811,8 @@ async def telegram_webhook(req: Request):
                 f"پشتیبانی: @DARK_WIKI20"
             )
 
-        await http_client.post(
+        client = await get_http_client()
+        await client.post(
             f"{TELEGRAM_API}/sendMessage",
             json={"chat_id": chat_id, "text": caption, "parse_mode": "Markdown"}
         )
