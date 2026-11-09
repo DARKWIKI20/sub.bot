@@ -27,7 +27,7 @@ PUBLIC_URL = (
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "SuperSecretLongPassword_987654321_ChangeMe!")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
-# مسیر مخفی ادمین (قابل تنظیم از Environment Variables در Render)
+# مسیر امنیتی مدیریت (قابل شخصی‌سازی در متغیرهای محیطی)
 ADMIN_SECRET_PATH = os.getenv("ADMIN_SECRET_PATH", "manage-panel-x92").strip("/")
 
 SECRET_KEY = hashlib.sha256(f"{ADMIN_PASSWORD}_datacenter_v3_salt".encode()).digest()
@@ -89,7 +89,7 @@ def init_db():
 
 init_db()
 
-# ----------------- چرخه حیات و مدیریت شبکه -----------------
+# ----------------- چرخه حیات و شبکه -----------------
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global http_client
@@ -198,7 +198,7 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- محاسبات تاریخ و ترافیک -----------------
+# ----------------- تاریخ و ترافیک -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
@@ -238,21 +238,21 @@ def format_relative_time(past_timestamp: float) -> str:
         if diff < 0:
             return "هم‌اکنون"
         if diff < 60:
-            return f"{to_persian_num(str(diff))} ثانیه پیش"
+            return f"{to_persian_num(str(diff))} ثانیه قبل"
         minutes = diff // 60
         if minutes < 60:
-            return f"{to_persian_num(str(minutes))} دقیقه پیش"
+            return f"{to_persian_num(str(minutes))} دقیقه قبل"
         hours = minutes // 60
         if hours < 24:
-            return f"{to_persian_num(str(hours))} ساعت پیش"
+            return f"{to_persian_num(str(hours))} ساعت قبل"
         days = hours // 24
         if days < 7:
-            return f"{to_persian_num(str(days))} روز پیش"
+            return f"{to_persian_num(str(days))} روز قبل"
         weeks = days // 7
         if weeks < 4:
-            return f"{to_persian_num(str(weeks))} هفته پیش"
+            return f"{to_persian_num(str(weeks))} هفته قبل"
         months = days // 30
-        return f"{to_persian_num(str(months))} ماه پیش"
+        return f"{to_persian_num(str(months))} ماه قبل"
     except Exception:
         return "نامشخص"
 
@@ -308,7 +308,7 @@ async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
         try:
             res_info = await http_client.get(
                 f"{clean_url}/info",
-                headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+                headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
                 timeout=5.0
             )
             if res_info.status_code == 200:
@@ -320,20 +320,17 @@ async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
                         if ts > 0:
                             diff = time.time() - ts
                             if 0 <= diff <= 180:
-                                return True, "روشن و در حال استفاده"
+                                return True, "متصل"
                             return False, format_relative_time(ts)
                     if data.get("is_online") is True or str(data.get("status", "")).lower() == "online":
-                        return True, "روشن و در حال استفاده"
+                        return True, "متصل"
         except Exception:
             pass
 
         try:
             res_html = await http_client.get(
                 upstream_url,
-                headers={
-                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                },
+                headers={"Accept": "text/html", "User-Agent": "Mozilla/5.0"},
                 timeout=5.0
             )
             if res_html.status_code == 200:
@@ -347,7 +344,7 @@ async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
                     if ts > 0:
                         diff = time.time() - ts
                         if 0 <= diff <= 180:
-                            return True, "روشن و در حال استفاده"
+                            return True, "متصل"
                         return False, format_relative_time(ts)
         except Exception:
             pass
@@ -366,13 +363,13 @@ def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
                 if ts > 0:
                     diff = now - ts
                     if 0 <= diff <= 180:
-                        return True, "روشن و در حال استفاده"
+                        return True, "متصل"
                     return False, format_relative_time(ts)
 
         for c in configs:
             name_lower = str(c.get("name", "")).lower()
             if "online" in name_lower or "متصل" in name_lower:
-                return True, "روشن و در حال استفاده"
+                return True, "متصل"
             if "آخرین اتصال" in name_lower or "last seen" in name_lower:
                 clean_txt = c["name"].replace("آخرین اتصال:", "").replace("آخرین اتصال", "").replace("last seen:", "").strip()
                 return False, clean_txt if clean_txt else "نامشخص"
@@ -514,159 +511,182 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- سیستم طراحی و استایل -----------------
+# ----------------- دیزاین سیستم اصلاح‌شده (UNSLOP) -----------------
 ANIMATED_DESIGN_SYSTEM_CSS = """
 :root {
-    --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-    --duration-snappy: 160ms;
-    --duration-flow: 240ms;
-    --duration-enter: 320ms;
+    --bg-base: #090a0f;
+    --bg-surface: #11131a;
+    --bg-surface-elevated: #161922;
+    --bg-input: #0c0e14;
+    
+    --border-subtle: rgba(255, 255, 255, 0.07);
+    --border-hover: rgba(255, 255, 255, 0.16);
+    --border-focus: #3b82f6;
 
-    --p-blue-500: #4b85d1;
-    --p-blue-600: #3671bf;
-    --p-slate-50: #f4f5f7;
-    --p-zinc-900: #18181b;
-    --p-zinc-950: #0c0c0e;
-
-    --bg-canvas: var(--p-slate-50);
-    --bg-surface: rgba(255, 255, 255, 0.88);
-    --text-primary: #0f172a;
-    --text-secondary: #64748b;
-    --border-subtle: rgba(226, 232, 240, 0.95);
-    --btn-primary-bg: linear-gradient(135deg, var(--p-blue-500), var(--p-blue-600));
-}
-
-html.dark {
-    --bg-canvas: var(--p-zinc-950);
-    --bg-surface: rgba(24, 24, 27, 0.85);
-    --text-primary: #f1f5f9;
+    --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
-    --border-subtle: rgba(39, 39, 42, 0.9);
-}
+    --text-muted: #64748b;
 
-body {
-    font-family: Vazirmatn FD, system-ui, -apple-system, sans-serif;
-    background-color: var(--bg-canvas);
-    color: var(--text-primary);
+    --accent-primary: #3b82f6;
+    --accent-hover: #2563eb;
+    --accent-subtle: rgba(59, 130, 246, 0.12);
+    --accent-border: rgba(59, 130, 246, 0.28);
+
+    --status-active-bg: rgba(16, 185, 129, 0.1);
+    --status-active-text: #34d399;
+    --status-active-border: rgba(16, 185, 129, 0.25);
+
+    --status-danger-bg: rgba(244, 63, 94, 0.1);
+    --status-danger-text: #fb7185;
+    --status-danger-border: rgba(244, 63, 94, 0.25);
 }
 
 * {
+    box-sizing: border-box;
     scrollbar-width: thin;
-    scrollbar-color: rgba(75, 133, 209, 0.35) transparent;
+    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
 }
-::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-track { background: transparent !important; }
-::-webkit-scrollbar-thumb { background: rgba(75, 133, 209, 0.35); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(75, 133, 209, 0.8); }
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 9999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.35); }
 
-@keyframes emilEnter {
-    from {
-        opacity: 0;
-        transform: translateY(12px) scale(0.97);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0) scale(1);
-    }
+body {
+    font-family: 'Vazirmatn FD', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    -webkit-font-smoothing: antialiased;
 }
 
-.animate-enter {
-    animation: emilEnter var(--duration-enter) var(--ease-out) both;
+.mono-num {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+    font-variant-numeric: tabular-nums;
+    direction: ltr !important;
+    display: inline-block;
 }
 
-.stagger-1 { animation-delay: 40ms; }
-.stagger-2 { animation-delay: 80ms; }
-.stagger-3 { animation-delay: 120ms; }
-.stagger-4 { animation-delay: 160ms; }
-
-.btn-press {
-    transition: transform var(--duration-snappy) var(--ease-out), opacity var(--duration-snappy) var(--ease-out);
-    will-change: transform;
-}
-.btn-press:active {
-    transform: scale(0.96);
-}
-
-@media (hover: hover) and (pointer: fine) {
-    .hover-lift {
-        transition: transform var(--duration-flow) var(--ease-out), border-color var(--duration-flow) var(--ease-out);
-        will-change: transform;
-    }
-    .hover-lift:hover {
-        transform: translateY(-2px);
-    }
+.surface-box {
+    background-color: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 16px;
 }
 
 .surface-card {
-    background: var(--bg-surface);
+    background-color: var(--bg-surface);
     border: 1px solid var(--border-subtle);
-    backdrop-filter: blur(14px);
+    border-radius: 14px;
+    transition: border-color 0.15s ease;
+}
+.surface-card:hover {
+    border-color: var(--border-hover);
 }
 
-.tab-button {
-    min-height: 44px;
-    padding: 0 1.25rem;
-    border-radius: 0.85rem;
-    font-weight: 700;
-    transition: transform var(--duration-snappy) var(--ease-out), background var(--duration-snappy) var(--ease-out), color var(--duration-snappy) var(--ease-out);
-}
-.tab-button.active {
-    background: var(--btn-primary-bg);
-    color: #ffffff;
-    box-shadow: 0 4px 14px rgba(75, 133, 209, 0.3);
-}
-.tab-button:not(.active) {
-    background: var(--bg-surface);
-    color: var(--text-secondary);
-    border: 1px solid var(--border-subtle);
-}
-
-.touch-target {
-    min-width: 44px;
-    min-height: 44px;
+.btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    line-height: 1;
+    border-radius: 10px;
+    transition: all 0.14s ease;
+    cursor: pointer;
+    user-select: none;
+    border: 1px solid transparent;
+}
+.btn:active {
+    transform: scale(0.97);
 }
 
-.en-digits {
-    font-family: system-ui, -apple-system, sans-serif !important;
-    font-variant-numeric: normal !important;
-    direction: ltr !important;
-    display: inline-block;
+.btn-primary {
+    background-color: var(--accent-primary);
+    color: #ffffff;
+}
+.btn-primary:hover {
+    background-color: var(--accent-hover);
+}
+
+.btn-secondary {
+    background-color: var(--bg-surface-elevated);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+}
+.btn-secondary:hover {
+    background-color: #1e2230;
+    border-color: var(--border-hover);
+}
+
+.input-field {
+    width: 100%;
+    background-color: var(--bg-input);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    padding: 0.65rem 0.875rem;
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    outline: none;
+    transition: border-color 0.15s ease;
+}
+.input-field:focus {
+    border-color: var(--border-focus);
+}
+
+.tab-btn {
+    padding: 0.55rem 1rem;
+    border-radius: 10px;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    background: transparent;
+    border: 1px solid transparent;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+.tab-btn.active {
+    color: #ffffff;
+    background-color: var(--bg-surface-elevated);
+    border-color: var(--border-subtle);
+}
+.tab-btn:hover:not(.active) {
+    color: var(--text-primary);
 }
 """
 
 def render_login_html(admin_path: str, error: str = None) -> str:
-    err_box = f'<div role="alert" class="p-3.5 mb-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold text-center animate-enter">{html.escape(error)}</div>' if error else ""
+    err_box = f"""
+    <div class="p-3 mb-4 rounded-xl text-xs font-semibold text-center border" style="background-color: var(--status-danger-bg); color: var(--status-danger-text); border-color: var(--status-danger-border);">
+        {html.escape(error)}
+    </div>""" if error else ""
+
     return f"""<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ورود به مدیریت دیتاسنتر</title>
+    <title>مدیریت | ورود ادمین</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
     <style>{ANIMATED_DESIGN_SYSTEM_CSS}</style>
 </head>
-<body class="min-h-screen flex flex-col justify-between p-4">
-    <div></div>
-    <main class="surface-card p-8 rounded-3xl w-full max-w-md mx-auto shadow-2xl animate-enter">
-        <div class="w-14 h-14 rounded-2xl bg-[#4b85d1]/10 border border-[#4b85d1]/25 flex items-center justify-center mx-auto mb-5 text-[#4b85d1]">
-            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="surface-box w-full max-w-sm p-6 sm:p-8 shadow-2xl">
+        <div class="flex items-center justify-center mb-6">
+            <div class="w-12 h-12 rounded-xl flex items-center justify-center bg-blue-500/10 border border-blue-500/25 text-blue-400">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" stroke-width="2"></rect><path d="M7 11V7a5 5 0 0110 0v4" stroke-width="2"></path></svg>
+            </div>
         </div>
-        <h1 class="text-xl font-extrabold mb-1 text-center">ورود به پنل مدیریت دیتاسنتر</h1>
-        <p class="text-xs text-slate-400 text-center mb-6">کنترل نشست رمزنگاری‌شده و ضد Brute-Force</p>
+        <h1 class="text-base font-bold text-center mb-1 text-slate-100">احراز هویت سرور</h1>
+        <p class="text-xs text-slate-400 text-center mb-6">دسترسی محدود به مدیر دیتاسنتر</p>
         {err_box}
         <form action="/{admin_path}/login" method="post" class="space-y-4">
             <div>
-                <label for="admin_pass" class="block text-xs text-slate-400 mb-2">رمز عبور ادمین</label>
-                <input id="admin_pass" type="password" name="password" required autofocus class="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#4b85d1] text-left font-mono">
+                <label for="admin_pass" class="block text-xs text-slate-400 mb-1.5 font-medium">رمز عبور امنیتی</label>
+                <input id="admin_pass" type="password" name="password" required autofocus class="input-field mono-num text-left">
             </div>
-            <button type="submit" class="btn-press w-full min-h-[44px] bg-[#4b85d1] hover:bg-[#3671bf] text-white font-bold rounded-xl text-sm transition-colors shadow-lg cursor-pointer">ورود به سیستم</button>
+            <button type="submit" class="btn btn-primary w-full py-2.5">ورود به پنل</button>
         </form>
-    </main>
-    <div></div>
+    </div>
 </body>
 </html>"""
 
@@ -684,33 +704,33 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
         safe_note = html.escape(p["admin_note"] or "")
         safe_notice = html.escape(p["custom_notice"] or "")
         hits = p["sub_hits"] or 0
-        last_fetch = html.escape(p["last_sub_fetch"] or "بدون اتصال")
+        last_fetch = html.escape(p["last_sub_fetch"] or "اتصال ثبت نشده")
         fake_val = p["fake_total_gb"] or 0
 
         cached_data = sub_cache.get(p["token"])
         if cached_data and cached_data.get("info"):
             info = cached_data["info"]
             u, d, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_val)
-            traffic_badge = f"<span class='text-xs font-mono text-emerald-400' dir='ltr'>{format_bytes(u+d)} / {format_bytes(tot)}</span>"
+            traffic_badge = f"<span class='text-xs mono-num text-slate-200'>{format_bytes(u+d)} / {format_bytes(tot)}</span>"
             
             if cached_data.get("is_online"):
-                online_badge = '<span class="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-400"><span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>آنلاین</span>'
+                online_badge = '<span class="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>متصل</span>'
             else:
                 last_s = cached_data.get("last_seen_text", "نامشخص")
                 online_badge = f'<span class="text-xs text-slate-400">{last_s}</span>'
         else:
-            traffic_badge = "<span class='text-[11px] text-slate-500'>آماده همگام‌سازی</span>"
-            online_badge = "<span class='text-[11px] text-slate-500'>نامشخص</span>"
+            traffic_badge = "<span class='text-xs text-slate-500'>—</span>"
+            online_badge = "<span class='text-xs text-slate-500'>—</span>"
 
         status_badge = (
-            '<span class="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20"><span class="w-1.5 h-1.5 rounded-full bg-rose-500"></span>مسدود</span>'
+            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border" style="background-color: var(--status-danger-bg); color: var(--status-danger-text); border-color: var(--status-danger-border);">مسدود</span>'
             if p["is_blocked"] else
-            '<span class="inline-flex items-center gap-1.5 whitespace-nowrap px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>فعال</span>'
+            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border" style="background-color: var(--status-active-bg); color: var(--status-active-text); border-color: var(--status-active-border);">فعال</span>'
         )
-        fake_label = f"<span class='px-2 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/20 text-[#4b85d1] font-mono text-xs font-bold'>{fake_val:g} GB</span>" if fake_val > 0 else "<span class='text-slate-500 text-xs'>واقعی</span>"
+        fake_label = f"<span class='mono-num text-xs text-blue-400 font-bold'>{fake_val:g} GB</span>" if fake_val > 0 else "<span class='text-slate-500 text-xs'>واقعی</span>"
         
-        btn_class = "bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20" if p["is_blocked"] else "bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20"
-        btn_text = "رفع بلاک" if p["is_blocked"] else "بلاک"
+        btn_class = "btn-secondary text-emerald-400 border-emerald-500/30 hover:border-emerald-500/50" if p["is_blocked"] else "btn-secondary text-amber-400 border-amber-500/30 hover:border-amber-500/50"
+        btn_text = "فعال‌سازی" if p["is_blocked"] else "مسدود"
         
         p_json = html.escape(json.dumps({
             "token": p["token"],
@@ -723,241 +743,243 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
 
         dash_url = f"https://{domain}/d/{safe_token}"
         sub_url = f"https://{domain}/sub/{safe_token}"
-        note_html = f'<div class="text-[11px] text-amber-400/90 mt-1">📌 {safe_note}</div>' if safe_note else ''
-        notice_indicator = '<span class="inline-block mr-1 text-[10px] px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-400 border border-purple-500/20">اعلان فعال</span>' if safe_notice else ''
+        note_html = f'<div class="text-[11px] text-amber-400/80 mt-1 font-mono leading-tight">{safe_note}</div>' if safe_note else ''
+        notice_indicator = '<span class="inline-block mr-1 text-[10px] px-1.5 py-0.2 rounded border border-blue-500/30 bg-blue-500/10 text-blue-400">اعلان</span>' if safe_notice else ''
 
         rows += f"""
-        <tr class="profile-row hover:bg-zinc-800/40 transition-colors" data-name="{safe_name.lower()} {safe_token.lower()} {safe_note.lower()}" data-status="{'blocked' if p['is_blocked'] else 'active'}">
-            <td class="p-4 whitespace-nowrap">
-                <div class="font-bold text-sm flex items-center">{safe_name} {notice_indicator}</div>
+        <tr class="profile-row border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors" data-name="{safe_name.lower()} {safe_token.lower()} {safe_note.lower()}" data-status="{'blocked' if p['is_blocked'] else 'active'}">
+            <td class="p-3.5 whitespace-nowrap">
+                <div class="font-bold text-sm text-slate-200">{safe_name} {notice_indicator}</div>
                 {note_html}
             </td>
-            <td class="p-4 whitespace-nowrap">
+            <td class="p-3.5 whitespace-nowrap">
                 <div class="flex items-center gap-1.5">
-                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn-press px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-[#4b85d1] hover:text-white text-xs font-semibold transition-colors cursor-pointer">کپی داشبورد</button>
-                    <button type="button" onclick="copyText('{sub_url}', 'لینک ساب کپی شد')" class="btn-press px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-[#4b85d1] hover:text-white text-xs font-semibold transition-colors cursor-pointer">کپی ساب</button>
-                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn-press p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-slate-300 transition-colors cursor-pointer" title="QR Code">
-                        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn btn-secondary px-2.5 py-1 text-xs">داشبورد</button>
+                    <button type="button" onclick="copyText('{sub_url}', 'لینک اشتراک کپی شد')" class="btn btn-secondary px-2.5 py-1 text-xs">ساب</button>
+                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn btn-secondary p-1.5" title="QR Code">
+                        <svg class="w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                     </button>
-                    <a href="/d/{safe_token}" target="_blank" class="p-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-[#4b85d1] transition-colors" title="مشاهده">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
-                    </a>
                 </div>
             </td>
-            <td class="p-4 whitespace-nowrap text-center">{online_badge}</td>
-            <td class="p-4 whitespace-nowrap text-center">{fake_label}</td>
-            <td class="p-4 whitespace-nowrap text-center">{traffic_badge}</td>
-            <td class="p-4 whitespace-nowrap">
-                <div class="text-xs font-bold text-slate-200">{hits} بار</div>
+            <td class="p-3.5 whitespace-nowrap text-center">{online_badge}</td>
+            <td class="p-3.5 whitespace-nowrap text-center">{fake_label}</td>
+            <td class="p-3.5 whitespace-nowrap text-center">{traffic_badge}</td>
+            <td class="p-3.5 whitespace-nowrap">
+                <div class="text-xs font-semibold mono-num text-slate-300">{hits} بار</div>
                 <div class="text-[11px] text-slate-500 mt-0.5">{last_fetch}</div>
             </td>
-            <td class="p-4 whitespace-nowrap">{status_badge}</td>
-            <td class="p-4 whitespace-nowrap">
-                <div class="flex justify-center items-center gap-1.5">
-                    <button type="button" onclick="openEditModal({p_json})" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 transition-colors cursor-pointer">ویرایش</button>
+            <td class="p-3.5 whitespace-nowrap text-center">{status_badge}</td>
+            <td class="p-3.5 whitespace-nowrap text-left">
+                <div class="flex justify-end items-center gap-1.5">
+                    <button type="button" onclick="openEditModal({p_json})" class="btn btn-secondary px-2.5 py-1 text-xs">ویرایش</button>
                     <form action="/{admin_path}/profiles/{safe_token}/refresh-cache" method="post" class="m-0">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-press min-h-[36px] px-2.5 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-slate-300 transition-colors cursor-pointer" title="بروزرسانی کش">🔄</button>
+                        <button type="submit" class="btn btn-secondary p-1.5 text-slate-400" title="تازه‌سازی کش">
+                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+                        </button>
                     </form>
                     <form action="/{admin_path}/profiles/{safe_token}/toggle-block" method="post" class="m-0">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold transition-colors cursor-pointer {btn_class}">{btn_text}</button>
+                        <button type="submit" class="btn px-2.5 py-1 text-xs {btn_class}">{btn_text}</button>
                     </form>
-                    <form action="/{admin_path}/profiles/{safe_token}/delete" method="post" class="m-0" onsubmit="return confirm('آیا از حذف کامل این ساب اطمینان داری؟');">
+                    <form action="/{admin_path}/profiles/{safe_token}/delete" method="post" class="m-0" onsubmit="return confirm('تایید حذف نهایی ساب؟');">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors cursor-pointer">حذف</button>
+                        <button type="submit" class="btn btn-secondary px-2.5 py-1 text-xs text-rose-400 border-rose-500/30 hover:border-rose-500/50">حذف</button>
                     </form>
                 </div>
             </td>
         </tr>"""
 
     if not rows:
-        rows = '<tr><td colspan="8" class="p-10 text-center text-slate-500 text-xs">هنوز هیچ سابی ثبت نشده است.</td></tr>'
+        rows = '<tr><td colspan="8" class="p-8 text-center text-slate-500 text-xs">هنوز هیچ اشتراکی ساخته نشده است.</td></tr>'
 
     return f"""<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدیریت ساب‌ها</title>
+    <title>داشبورد مدیریت دیتاسنتر</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
     <style>{ANIMATED_DESIGN_SYSTEM_CSS}</style>
 </head>
-<body class="min-h-screen p-4 sm:p-6 lg:p-8 flex flex-col justify-between">
-    <main class="max-w-7xl w-full mx-auto space-y-6 animate-enter">
-        <header class="flex flex-wrap justify-between items-center gap-4 surface-card p-6 rounded-3xl">
-            <div class="flex items-center gap-3.5">
-                <div class="w-12 h-12 rounded-2xl bg-[#4b85d1]/15 border border-[#4b85d1]/30 flex items-center justify-center text-[#4b85d1]">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 12h14M5 12a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v4a2 2 0 01-2 2M5 12a2 2 0 00-2 2v4a2 2 0 002 2h14a2 2 0 002-2v-4a2 2 0 00-2-2"></path></svg>
+<body class="min-h-screen p-4 sm:p-6 lg:p-8">
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <!-- هدر کنترل پنل -->
+        <header class="surface-box p-5 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/25 flex items-center justify-center text-blue-400">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
                 </div>
                 <div>
-                    <h1 class="text-xl sm:text-2xl font-extrabold">کنترل پنل مرکزی دیتاسنتر</h1>
-                    <p class="text-xs text-slate-400 mt-0.5">دامنه سرور: <span class="font-mono text-[#4b85d1]" dir="ltr">{domain}</span></p>
+                    <h1 class="text-base font-bold text-slate-100">کنترل پنل مرکزی</h1>
+                    <div class="text-xs text-slate-500 mono-num mt-0.5">{domain}</div>
                 </div>
             </div>
-            <div class="flex flex-wrap items-center gap-2.5">
+            <div class="flex flex-wrap items-center gap-2">
                 <form action="/{admin_path}/cache/clear" method="post" class="m-0">
                     <input type="hidden" name="csrf_token" value="{csrf_token}">
-                    <button type="submit" class="btn-press min-h-[42px] px-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-xs font-bold transition-colors cursor-pointer">پاکسازی کل کش ({cached_items})</button>
+                    <button type="submit" class="btn btn-secondary px-3 py-2 text-xs">پاکسازی کش ({cached_items})</button>
                 </form>
-                <a href="/{admin_path}/backup" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-[#4b85d1]/15 hover:bg-[#4b85d1]/25 text-[#4b85d1] border border-[#4b85d1]/30 rounded-xl text-xs font-bold transition-colors">دانلود بکاپ JSON</a>
-                <a href="/{admin_path}/logout" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-colors">خروج</a>
+                <a href="/{admin_path}/backup" class="btn btn-secondary px-3 py-2 text-xs text-blue-400">دانلود بکاپ JSON</a>
+                <a href="/{admin_path}/logout" class="btn btn-secondary px-3 py-2 text-xs text-rose-400">خروج</a>
             </div>
         </header>
 
-        <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            <div class="surface-card hover-lift p-5 rounded-3xl animate-enter stagger-1">
+        <!-- آمار کلی سیستم (KPI) -->
+        <section class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div class="surface-card p-4">
                 <div class="text-xs text-slate-400 mb-1">کل اشتراک‌ها</div>
-                <div class="text-2xl sm:text-3xl font-black text-white">{total_count}</div>
+                <div class="text-2xl font-bold mono-num text-slate-100">{total_count}</div>
             </div>
-            <div class="surface-card hover-lift p-5 rounded-3xl animate-enter stagger-2">
-                <div class="text-xs text-slate-400 mb-1">اشتراک‌های فعال</div>
-                <div class="text-2xl sm:text-3xl font-black text-emerald-400">{active_count}</div>
+            <div class="surface-card p-4">
+                <div class="text-xs text-slate-400 mb-1">فعال</div>
+                <div class="text-2xl font-bold mono-num text-emerald-400">{active_count}</div>
             </div>
-            <div class="surface-card hover-lift p-5 rounded-3xl animate-enter stagger-3">
+            <div class="surface-card p-4">
                 <div class="text-xs text-slate-400 mb-1">مسدود شده</div>
-                <div class="text-2xl sm:text-3xl font-black text-rose-400">{blocked_count}</div>
+                <div class="text-2xl font-bold mono-num text-rose-400">{blocked_count}</div>
             </div>
-            <div class="surface-card hover-lift p-5 rounded-3xl animate-enter stagger-4">
-                <div class="text-xs text-slate-400 mb-1">مجموع آپدیت کلاینت‌ها</div>
-                <div class="text-2xl sm:text-3xl font-black text-[#4b85d1]">{total_hits} <span class="text-xs font-normal text-slate-400">بار</span></div>
+            <div class="surface-card p-4">
+                <div class="text-xs text-slate-400 mb-1">درخواست‌های آپدیت کلاینت</div>
+                <div class="text-2xl font-bold mono-num text-blue-400">{total_hits}</div>
             </div>
         </section>
 
-        <section class="surface-card p-6 rounded-3xl animate-enter stagger-1 border border-emerald-500/25 bg-emerald-500/5">
-            <h2 class="text-base font-bold mb-3 flex items-center gap-2 text-emerald-400">
-                <svg class="w-5 h-5 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                آپلود و بازیابی بکاپ اشتراک‌ها
-            </h2>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
-                <div class="md:col-span-2">
-                    <label class="block text-xs text-slate-400 mb-1.5">فایل بکاپ JSON را انتخاب کنید:</label>
-                    <input type="file" id="dashboardBackupFile" accept=".json" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-emerald-500">
-                </div>
-                <div class="flex flex-col gap-2 pt-2 md:pt-4">
-                    <div class="flex items-center gap-2">
-                        <input type="checkbox" id="overwrite_backup_chk" class="rounded">
-                        <label for="overwrite_backup_chk" class="text-xs text-slate-300 select-none">توکن‌های تکراری به‌روز شوند</label>
+        <!-- ثبت اشتراک و بازیابی بکاپ -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <section class="lg:col-span-2 surface-box p-5">
+                <h2 class="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    ثبت اشتراک جدید
+                </h2>
+                <form action="/{admin_path}/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    <input type="hidden" name="csrf_token" value="{csrf_token}">
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">نام یا شناسه کاربری *</label>
+                        <input type="text" name="name" placeholder="User-VIP" required class="input-field">
                     </div>
-                    <button type="button" onclick="uploadAndRestoreBackup()" id="btnUploadBackup" class="btn-press w-full min-h-[42px] bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer shadow-lg">آپلود و اعمال بکاپ</button>
-                </div>
-            </div>
-        </section>
-
-        <section class="surface-card p-6 rounded-3xl animate-enter stagger-2">
-            <h2 class="text-base font-bold mb-4 flex items-center gap-2">
-                <svg class="w-5 h-5 text-[#4b85d1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                افزودن اشتراک جدید
-            </h2>
-            <form action="/{admin_path}/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <input type="hidden" name="csrf_token" value="{csrf_token}">
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1.5">نام یا برند نمایشی *</label>
-                    <input type="text" name="name" placeholder="مثلاً: VIP" required class="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1]">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1.5">لینک ساب اصلی فروشنده *</label>
-                    <input type="url" name="upstream_url" placeholder="https://seller.com/sub/..." required class="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1] text-left font-mono" dir="ltr">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1.5">حجم فیک کل (GB) - اختیاری</label>
-                    <input type="number" step="0.1" min="0" name="fake_total_gb" placeholder="0 = حجم واقعی" class="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1] text-left font-mono" dir="ltr">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1.5">اعلان اختصاصی کاربر (اختیاری)</label>
-                    <input type="text" name="custom_notice" placeholder="مثلاً: سرورهای جدید اضافه شدند" class="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1]">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1.5">یادداشت محرمانه ادمین (اختیاری)</label>
-                    <input type="text" name="admin_note" placeholder="مثلاً: خریدار تلگرام @user" class="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1]">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1.5">توکن اختصاصی لینک (اختیاری)</label>
-                    <div class="flex gap-2">
-                        <input type="text" name="custom_token" placeholder="خالی = خودکار" class="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1] text-left font-mono" dir="ltr">
-                        <button type="submit" class="btn-press px-6 min-h-[42px] bg-[#4b85d1] hover:bg-[#3671bf] text-white font-bold rounded-xl text-sm shrink-0 transition-colors cursor-pointer shadow-lg">ثبت ساب</button>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">لینک مستقیم فروشنده (Upstream) *</label>
+                        <input type="url" name="upstream_url" placeholder="https://panel.site/sub/..." required class="input-field mono-num text-left">
                     </div>
-                </div>
-            </form>
-        </section>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">حجم مجازی کل (GB) — اختیاری</label>
+                        <input type="number" step="0.1" min="0" name="fake_total_gb" placeholder="0 = حجم واقعی" class="input-field mono-num text-left">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">توکن اختصاصی لینک (اختیاری)</label>
+                        <input type="text" name="custom_token" placeholder="خالی = تصادفی" class="input-field mono-num text-left">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">اعلان اختصاصی در داشبورد</label>
+                        <input type="text" name="custom_notice" placeholder="متن پیام به کاربر..." class="input-field">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">یادداشت داخلی ادمین</label>
+                        <input type="text" name="admin_note" placeholder="آیدی تلگرام، تاریخ و..." class="input-field">
+                    </div>
+                    <div class="md:col-span-2 pt-2">
+                        <button type="submit" class="btn btn-primary px-6 py-2.5">ایجاد و ذخیره اشتراک</button>
+                    </div>
+                </form>
+            </section>
 
-        <section class="surface-card rounded-3xl overflow-hidden animate-enter stagger-3">
-            <div class="p-5 sm:p-6 border-b border-zinc-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <h2 class="text-base font-bold">لیست اشتراک‌های دیتاسنتر ({total_count})</h2>
-                <div class="flex flex-wrap items-center gap-2">
-                    <input type="text" id="searchInput" oninput="filterTable()" placeholder="جستجوی ساب یا یادداشت..." class="bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:border-[#4b85d1] w-56">
-                    <select id="statusFilter" onchange="filterTable()" class="bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#4b85d1]">
+            <section class="surface-box p-5 flex flex-col justify-between">
+                <div>
+                    <h2 class="text-sm font-bold text-slate-200 mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        بازگردانی داده‌ها از بکاپ
+                    </h2>
+                    <p class="text-xs text-slate-400 mb-4 leading-relaxed">فایل JSON بکاپ قبلی خود را برای بازیابی سریع در کادر زیر انتخاب کنید.</p>
+                    <input type="file" id="dashboardBackupFile" accept=".json" class="input-field text-xs mb-3">
+                    <label class="flex items-center gap-2 text-xs text-slate-300 select-none cursor-pointer">
+                        <input type="checkbox" id="overwrite_backup_chk" class="rounded border-zinc-700 bg-zinc-900">
+                        <span>به‌روزرسانی رکوردهای تکراری</span>
+                    </label>
+                </div>
+                <button type="button" onclick="uploadAndRestoreBackup()" id="btnUploadBackup" class="btn btn-secondary w-full py-2.5 mt-4 text-emerald-400">آپلود و بازیابی اطلاعات</button>
+            </section>
+        </div>
+
+        <!-- جدول لیست ساب‌ها -->
+        <section class="surface-box overflow-hidden">
+            <div class="p-4 border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h2 class="text-sm font-bold text-slate-200">فهرست اشتراک‌ها ({total_count})</h2>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="searchInput" oninput="filterTable()" placeholder="جستجو نام، توکن، یادداشت..." class="input-field py-1.5 px-3 text-xs w-60">
+                    <select id="statusFilter" onchange="filterTable()" class="input-field py-1.5 px-3 text-xs w-28">
                         <option value="all">همه</option>
-                        <option value="active">فعال‌ها</option>
-                        <option value="blocked">مسدودها</option>
+                        <option value="active">فعال</option>
+                        <option value="blocked">مسدود</option>
                     </select>
                 </div>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-right text-sm">
-                    <thead class="bg-zinc-950/60 text-slate-400 text-xs border-b border-zinc-800">
+                    <thead class="bg-white/[0.02] text-slate-400 text-xs border-b border-white/[0.06]">
                         <tr>
-                            <th class="p-4 whitespace-nowrap">نام ساب / یادداشت</th>
-                            <th class="p-4 whitespace-nowrap">لینک‌ها</th>
-                            <th class="p-4 whitespace-nowrap text-center">وضعیت آنلاین</th>
-                            <th class="p-4 whitespace-nowrap text-center">حجم فیک</th>
-                            <th class="p-4 whitespace-nowrap text-center">مصرف کش‌شده</th>
-                            <th class="p-4 whitespace-nowrap">آمار کلاینت</th>
-                            <th class="p-4 whitespace-nowrap">وضعیت</th>
-                            <th class="p-4 text-center whitespace-nowrap">عملیات</th>
+                            <th class="p-3.5 whitespace-nowrap">کاربر</th>
+                            <th class="p-3.5 whitespace-nowrap">لینک‌ها</th>
+                            <th class="p-3.5 whitespace-nowrap text-center">وضعیت لایو</th>
+                            <th class="p-3.5 whitespace-nowrap text-center">حجم مجازی</th>
+                            <th class="p-3.5 whitespace-nowrap text-center">مصرف / سقف</th>
+                            <th class="p-3.5 whitespace-nowrap">همگام‌سازی</th>
+                            <th class="p-3.5 whitespace-nowrap text-center">دسترسی</th>
+                            <th class="p-3.5 text-left whitespace-nowrap">مدیریت</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-zinc-800/60">
-                        {rows}
-                    </tbody>
+                    <tbody>{rows}</tbody>
                 </table>
             </div>
         </section>
-    </main>
+    </div>
 
-    <div id="editModal" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
-        <div class="surface-card rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl animate-enter" onclick="event.stopPropagation()">
-            <h3 class="text-lg font-bold mb-4">ویرایش اطلاعات ساب</h3>
-            <form id="editForm" method="post" class="space-y-3.5">
+    <!-- مدال ویرایش -->
+    <div id="editModal" class="fixed inset-0 bg-black/70 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
+        <div class="surface-box rounded-2xl p-6 max-w-md w-full shadow-2xl" onclick="event.stopPropagation()">
+            <h3 class="text-base font-bold mb-4 text-slate-100">ویرایش اشتراک</h3>
+            <form id="editForm" method="post" class="space-y-3">
                 <input type="hidden" name="csrf_token" value="{csrf_token}">
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">نام یا برند نمایشی</label>
-                    <input type="text" id="edit_name" name="name" required class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1]">
+                    <label class="block text-xs text-slate-400 mb-1">نام یا شناسه کاربر</label>
+                    <input type="text" id="edit_name" name="name" required class="input-field">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">لینک اصلی فروشنده</label>
-                    <input type="url" id="edit_upstream" name="upstream_url" required class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1] font-mono text-left" dir="ltr">
+                    <label class="block text-xs text-slate-400 mb-1">لینک مستقیم فروشنده</label>
+                    <input type="url" id="edit_upstream" name="upstream_url" required class="input-field mono-num text-left">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">حجم فیک کل (GB) - 0 یعنی واقعی</label>
-                    <input type="number" step="0.1" min="0" id="edit_fake" name="fake_total_gb" required class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1] font-mono text-left" dir="ltr">
+                    <label class="block text-xs text-slate-400 mb-1">حجم مجازی کل (GB) — 0 یعنی واقعی</label>
+                    <input type="number" step="0.1" min="0" id="edit_fake" name="fake_total_gb" required class="input-field mono-num text-left">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">اعلان اختصاصی برای این مشتری</label>
-                    <input type="text" id="edit_notice" name="custom_notice" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1]">
+                    <label class="block text-xs text-slate-400 mb-1">اعلان داشبورد</label>
+                    <input type="text" id="edit_notice" name="custom_notice" class="input-field">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">یادداشت محرمانه ادمین</label>
-                    <input type="text" id="edit_note" name="admin_note" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-[#4b85d1]">
+                    <label class="block text-xs text-slate-400 mb-1">یادداشت داخلی ادمین</label>
+                    <input type="text" id="edit_note" name="admin_note" class="input-field">
                 </div>
                 <div class="flex gap-2 pt-3">
-                    <button type="submit" class="btn-press flex-1 min-h-[44px] bg-[#4b85d1] hover:bg-[#3671bf] text-white font-bold rounded-xl text-sm transition-colors cursor-pointer">ذخیره تغییرات</button>
-                    <button type="button" onclick="closeEditModal()" class="btn-press px-5 min-h-[44px] bg-zinc-800 hover:bg-zinc-700 text-slate-300 font-bold rounded-xl text-sm transition-colors cursor-pointer">انصراف</button>
+                    <button type="submit" class="btn btn-primary flex-1 py-2">ذخیره تغییرات</button>
+                    <button type="button" onclick="closeEditModal()" class="btn btn-secondary px-4 py-2">انصراف</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <div id="adminQrModal" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeAdminQR()">
-        <div class="surface-card p-6 rounded-3xl max-w-xs w-full flex flex-col items-center text-center animate-enter" onclick="event.stopPropagation()">
-            <h3 id="adminQrTitle" class="font-bold text-sm mb-4">QR Code</h3>
-            <img id="adminQrImg" src="" alt="QR" class="w-52 h-52 rounded-2xl mb-4 p-2.5 bg-white shadow-inner">
-            <button type="button" onclick="closeAdminQR()" class="btn-press w-full min-h-[42px] bg-zinc-800 hover:bg-zinc-700 text-xs font-bold rounded-xl cursor-pointer">بستن</button>
+    <!-- مدال QR -->
+    <div id="adminQrModal" class="fixed inset-0 bg-black/70 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeAdminQR()">
+        <div class="surface-box p-6 rounded-2xl max-w-xs w-full flex flex-col items-center text-center" onclick="event.stopPropagation()">
+            <div id="adminQrTitle" class="font-bold text-xs text-slate-300 mb-4 truncate w-full">QR Code</div>
+            <img id="adminQrImg" src="" alt="QR" class="w-48 h-48 rounded-lg mb-4 bg-white p-2">
+            <button type="button" onclick="closeAdminQR()" class="btn btn-secondary w-full py-2 text-xs">بستن</button>
         </div>
     </div>
 
-    <div id="adminToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-5 py-3 rounded-2xl bg-white text-slate-900 text-xs font-bold shadow-2xl animate-enter"></div>
+    <div id="adminToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2 rounded-lg bg-slate-100 text-slate-900 text-xs font-bold shadow-xl"></div>
 
     <script>
         const adminCsrfToken = "{csrf_token}";
@@ -971,8 +993,8 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
             setTimeout(() => t.classList.add('hidden'), 2000);
         }}
         function openQR(url, title) {{
-            document.getElementById('adminQrTitle').textContent = 'کد QR اشتراک: ' + title;
-            document.getElementById('adminQrImg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=' + encodeURIComponent(url);
+            document.getElementById('adminQrTitle').textContent = title;
+            document.getElementById('adminQrImg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
             document.getElementById('adminQrModal').classList.remove('hidden');
             document.getElementById('adminQrModal').classList.add('flex');
         }}
@@ -1003,7 +1025,6 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
                 row.style.display = (matchName && matchStatus) ? '' : 'none';
             }});
         }}
-
         async function uploadAndRestoreBackup() {{
             const fileInput = document.getElementById('dashboardBackupFile');
             if (!fileInput.files.length) {{
@@ -1012,14 +1033,13 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
             }}
             const file = fileInput.files[0];
             const reader = new FileReader();
-
             reader.onload = async function(e) {{
                 try {{
                     const parsedJson = JSON.parse(e.target.result);
                     const overwrite = document.getElementById('overwrite_backup_chk').checked;
                     const btn = document.getElementById('btnUploadBackup');
                     btn.disabled = true;
-                    btn.textContent = 'در حال بازگردانی دیتابیس...';
+                    btn.textContent = 'در حال بازگردانی...';
 
                     const res = await fetch('/' + adminPath + '/backup/restore', {{
                         method: 'POST',
@@ -1040,7 +1060,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
                         btn.textContent = 'آپلود و اعمال بکاپ';
                     }}
                 }} catch (err) {{
-                    alert('فایل انتخاب‌شده نامعتبر است یا ساختار JSON درستی ندارد.');
+                    alert('فرمت فایل JSON نامعتبر است.');
                 }}
             }};
             reader.readAsText(file);
@@ -1050,52 +1070,48 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
 </html>"""
 
 def render_app_card(name_html: str, url: str, btn_label: str, recommended: bool = False) -> str:
-    badge = '<span class="absolute top-2.5 right-2.5 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 border border-emerald-500/25">پیشنهادی</span>' if recommended else ''
+    rec_badge = '<span class="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-full mb-2 inline-block">پیشنهادی</span>' if recommended else '<span class="text-[10px] text-transparent mb-2 inline-block select-none">—</span>'
     return f"""
-    <div class="surface-card hover-lift p-4 sm:p-5 rounded-2xl flex flex-col items-center justify-between text-center relative border border-slate-200/80 dark:border-zinc-800">
-        {badge}
-        <div class="w-full text-center mt-3 mb-4">
-            <h3 class="font-extrabold text-base tracking-wide">{name_html}</h3>
+    <div class="surface-card p-4 flex flex-col items-center justify-between text-center">
+        <div>
+            {rec_badge}
+            <div class="font-bold text-sm text-slate-200 mb-3">{name_html}</div>
         </div>
-        <a href="{url}" target="_blank" rel="noopener noreferrer" class="btn-press w-full min-h-[40px] inline-flex items-center justify-center bg-[#4b85d1] hover:bg-[#3671bf] text-white rounded-xl text-xs font-bold transition-colors shadow-xs">{btn_label}</a>
+        <a href="{url}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary w-full py-1.5 text-xs text-blue-400 hover:text-blue-300">{btn_label}</a>
     </div>"""
 
 def render_dashboard_html(ctx: dict) -> str:
     safe_brand = html.escape(ctx["brand_name"])
-    safe_notice = html.escape(ctx["custom_notice"]) if ctx.get("custom_notice") else "لطفاً قبل از اتصال، یک‌بار لینک اشتراک (Update Subscription) را درون نرم‌افزار خود به‌روزرسانی کنید."
+    safe_notice = html.escape(ctx["custom_notice"]) if ctx.get("custom_notice") else "قبل از اتصال، یک‌بار دکمه Update Subscription را داخل نرم‌افزار خود بزنید."
     
     online_indicator = (
-        '<div class="flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-bold">'
-        '<span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>آنلاین (در حال استفاده)</div>'
+        '<div class="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">'
+        '<span class="w-2 h-2 rounded-full bg-emerald-400"></span>آنلاین و در حال استفاده</div>'
         if ctx.get("is_online") else
-        f'<div class="text-xs text-slate-400">آخرین اتصال: <span class="font-bold text-slate-300">{ctx.get("last_seen_text", "نامشخص")}</span></div>'
+        f'<div class="text-xs text-slate-400">آخرین اتصال: <span class="text-slate-200 font-semibold">{ctx.get("last_seen_text", "نامشخص")}</span></div>'
     )
 
     if ctx["is_blocked"]:
         main_section = """
-        <div role="alert" class="p-8 rounded-3xl border border-rose-500/30 bg-rose-500/5 mb-8 text-center shadow-lg animate-enter">
-            <div class="inline-flex items-center whitespace-nowrap gap-2 px-4 py-1.5 rounded-full bg-rose-500/10 text-rose-500 text-sm font-bold mb-3 border border-rose-500/20">
-                <span class="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span> مسدود شده
-            </div>
-            <div class="text-2xl sm:text-3xl font-bold text-rose-500 mb-2">اشتراک شما مسدود شده است</div>
-            <p class="text-sm opacity-75">دسترسی این اشتراک توسط پشتیبانی غیرفعال شده است.</p>
+        <div class="surface-box p-8 text-center border-rose-500/25 my-8">
+            <div class="inline-block px-3 py-1 rounded-full text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/25 mb-3">مسدود شده</div>
+            <div class="text-xl font-bold text-slate-100 mb-1">دسترسی این سرویس غیرفعال است</div>
+            <p class="text-xs text-slate-400">جهت تمدید یا رفع انسداد با بخش پشتیبانی تماس بگیرید.</p>
         </div>"""
     else:
         conf_items = ""
         for idx, c in enumerate(ctx["configs"]):
             conf_items += f"""
-            <div class="config-item surface-card hover-lift group relative p-3.5 rounded-2xl transition-all duration-200" data-confname="{c['name'].lower()} {c['proto'].lower()}">
-                <div class="flex items-center gap-3">
-                    <span class="px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase bg-[#4b85d1]/15 text-[#4b85d1] border border-[#4b85d1]/25 shrink-0">{c['proto']}</span>
-                    <div dir="ltr" class="text-sm sm:text-base font-semibold flex-1 min-w-0 truncate text-right">{c['name']}</div>
-                    <div class="flex gap-1.5 shrink-0">
-                        <button type="button" onclick="copyConfig({idx}, this)" aria-label="کپی کانفیگ" class="btn-press touch-target rounded-xl transition-all cursor-pointer bg-slate-200/70 dark:bg-zinc-800/90 hover:bg-[#4b85d1] hover:text-white" title="کپی کانفیگ">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
-                        </button>
-                        <button type="button" onclick="showConfigQR({idx})" aria-label="نمایش کد QR" class="btn-press touch-target rounded-xl bg-slate-200/70 dark:bg-zinc-800/90 hover:bg-slate-300 dark:hover:bg-zinc-700 transition-all cursor-pointer" title="کد QR">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 12v4a1 1 0 0 1-1 1h-4"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M17 8V7"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M7 17h.01"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><rect x="7" y="7" width="5" height="5" rx="1"></rect></svg>
-                        </button>
-                    </div>
+            <div class="config-item surface-card p-3 flex items-center justify-between gap-3" data-confname="{c['name'].lower()} {c['proto'].lower()}">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <span class="mono-num text-[11px] font-bold px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-slate-300 uppercase">{c['proto']}</span>
+                    <span dir="ltr" class="text-xs sm:text-sm font-semibold truncate text-slate-200">{c['name']}</span>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button type="button" onclick="copyConfig({idx}, this)" class="btn btn-secondary px-2.5 py-1 text-xs" title="کپی کانفیگ">کپی</button>
+                    <button type="button" onclick="showConfigQR({idx})" class="btn btn-secondary p-1.5 text-slate-400" title="کد QR">
+                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    </button>
                 </div>
             </div>"""
 
@@ -1106,189 +1122,150 @@ def render_dashboard_html(ctx: dict) -> str:
         streisand_deep = f"streisand://import/{ctx['sub_url']}"
 
         android_apps = "".join([
-            render_app_card("<span class='en-digits'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>v2rayNG</span>", "https://github.com/2dust/v2rayNG/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Karing</span>", "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
-            render_app_card("<span class='en-digits'>Sing-box</span>", "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
-            render_app_card("<span class='en-digits'>NekoBox</span>", "https://github.com/MatsuriDayo/NekoBoxForAndroid/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='mono-num'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "گیت‌هاب", True),
+            render_app_card("<span class='mono-num'>v2rayNG</span>", "https://github.com/2dust/v2rayNG/releases", "گیت‌هاب", True),
+            render_app_card("<span class='mono-num'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "گیت‌هاب", False),
+            render_app_card("<span class='mono-num'>Sing-box</span>", "https://github.com/SagerNet/sing-box/releases", "گیت‌هاب", False),
         ])
         ios_apps = "".join([
-            render_app_card("<span class='en-digits'>Hiddify</span>", "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532", "دانلود از اپ‌استور", True),
-            render_app_card("<span class='en-digits'>Streisand</span>", "https://apps.apple.com/us/app/streisand/id6450534064", "دانلود از اپ‌استور", True),
-            render_app_card("<span class='en-digits'>Shadowrocket</span>", "https://apps.apple.com/us/app/shadowrocket/id932747118", "دانلود از اپ‌استور", True),
-            render_app_card("<span class='en-digits'>Karing</span>", "https://apps.apple.com/us/app/karing/id6472431552", "دانلود از اپ‌استور", False),
-            render_app_card("<span class='en-digits'>Sing-box</span>", "https://apps.apple.com/us/app/sing-box/id6451272673", "دانلود از اپ‌استور", False),
-            render_app_card("<span class='en-digits'>FoXray</span>", "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
+            render_app_card("<span class='mono-num'>Hiddify</span>", "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532", "اپ‌استور", True),
+            render_app_card("<span class='mono-num'>Streisand</span>", "https://apps.apple.com/us/app/streisand/id6450534064", "اپ‌استور", True),
+            render_app_card("<span class='mono-num'>Shadowrocket</span>", "https://apps.apple.com/us/app/shadowrocket/id932747118", "اپ‌استور", True),
+            render_app_card("<span class='mono-num'>Sing-box</span>", "https://apps.apple.com/us/app/sing-box/id6451272673", "اپ‌استور", False),
         ])
         win_apps = "".join([
-            render_app_card("<span class='en-digits'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>v2rayN</span>", "https://github.com/2dust/v2rayN/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Clash Verge</span>", "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", False),
-            render_app_card("<span class='en-digits'>Karing</span>", "https://github.com/KaringX/karing/releases", "دانلود از گیتهاب", False),
-            render_app_card("<span class='en-digits'>Nekoray</span>", "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='mono-num'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "گیت‌هاب", True),
+            render_app_card("<span class='mono-num'>v2rayN</span>", "https://github.com/2dust/v2rayN/releases", "گیت‌هاب", True),
+            render_app_card("<span class='mono-num'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "گیت‌هاب", False),
+            render_app_card("<span class='mono-num'>Clash Verge</span>", "https://github.com/clash-verge-rev/clash-verge-rev/releases", "گیت‌هاب", False),
         ])
         mac_apps = "".join([
-            render_app_card("<span class='en-digits'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Clash Verge</span>", "https://github.com/clash-verge-rev/clash-verge-rev/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "دانلود از گیتهاب", True),
-            render_app_card("<span class='en-digits'>Sing-box</span>", "https://github.com/SagerNet/sing-box/releases", "دانلود از گیتهاب", False),
-            render_app_card("<span class='en-digits'>FoXray</span>", "https://apps.apple.com/us/app/foxray/id6448898396", "دانلود از اپ‌استور", False),
-            render_app_card("<span class='en-digits'>Nekoray</span>", "https://github.com/MatsuriDayo/nekoray/releases", "دانلود از گیتهاب", False),
+            render_app_card("<span class='mono-num'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "گیت‌هاب", True),
+            render_app_card("<span class='mono-num'>Clash Verge</span>", "https://github.com/clash-verge-rev/clash-verge-rev/releases", "گیت‌هاب", True),
+            render_app_card("<span class='mono-num'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "گیت‌هاب", False),
+            render_app_card("<span class='mono-num'>Sing-box</span>", "https://github.com/SagerNet/sing-box/releases", "گیت‌هاب", False),
         ])
 
         main_section = f"""
-        <div class="mb-6 sm:mb-8 animate-enter">
-            <div class="p-4 sm:p-5 rounded-2xl border bg-gradient-to-r from-[#4b85d1]/15 via-[#4b85d1]/10 to-transparent border-[#4b85d1]/30 shadow-xs">
-                <div class="flex items-start gap-3.5">
-                    <div class="shrink-0 mt-0.5 text-[#4b85d1]">
-                        <svg class="w-5 h-5 sm:w-6 sm:h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.268 21a2 2 0 0 0 3.464 0"></path><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.411 5.956-2.738 7.326"></path></svg>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                        <div class="text-sm sm:text-base font-bold mb-1">اطلاعیه اشتراک</div>
-                        <p class="text-xs sm:text-sm opacity-85 leading-relaxed">{safe_notice}</p>
-                    </div>
+        <!-- اطلاعیه اشتراک -->
+        <div class="surface-box p-4 border-blue-500/20 bg-blue-500/[0.04] mb-6">
+            <div class="flex items-start gap-3">
+                <div class="text-blue-400 mt-0.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
                 </div>
+                <div class="text-xs text-slate-300 leading-relaxed font-medium">{safe_notice}</div>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6 mb-8 animate-enter stagger-1">
-            <div class="lg:col-span-2 surface-card p-6 sm:p-8 rounded-3xl shadow-lg flex flex-col justify-between">
-                <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-6">
+        <!-- خلاصه وضعیت و گیج مصرف -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div class="md:col-span-2 surface-box p-6 flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-6 pb-4 border-b border-white/[0.06]">
                     <div class="flex items-center gap-3">
-                        <span class="text-2xl sm:text-3xl font-extrabold text-emerald-500">فعال</span>
+                        <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">اشتراک فعال</span>
                         {online_indicator}
                     </div>
-                    <div class="sm:text-left">
-                        <div class="text-xs opacity-70">اعتبار زمانی</div>
-                        <p class="text-xl sm:text-2xl font-black mt-0.5">{ctx['days_left']} روز</p>
-                    </div>
+                    <div class="text-xs text-slate-400">اعتبار: <span class="mono-num font-bold text-slate-100">{ctx['days_left']}</span> روز</div>
                 </div>
 
-                <div class="flex flex-col sm:flex-row items-center gap-6 sm:gap-8">
-                    <div class="relative w-36 h-36 sm:w-40 sm:h-40 shrink-0">
-                        <svg class="transform -rotate-90 w-full h-full">
-                            <circle cx="50%" cy="50%" r="45%" stroke="currentColor" stroke-width="12" fill="none" class="text-slate-200/70 dark:text-zinc-800"></circle>
-                            <circle cx="50%" cy="50%" r="45%" stroke="currentColor" stroke-width="12" fill="none"
-                                stroke-dasharray="440" stroke-dashoffset="{ctx['dashoffset']}"
-                                class="text-[#4b85d1] transition-all duration-1000 ease-out" stroke-linecap="round"></circle>
+                <div class="flex flex-col sm:flex-row items-center gap-6">
+                    <!-- گیج دقیق وکتور بدون بلور -->
+                    <div class="relative w-28 h-28 shrink-0">
+                        <svg class="transform -rotate-90 w-full h-full" viewBox="0 0 120 120">
+                            <circle cx="60" cy="60" r="50" stroke="rgba(255,255,255,0.06)" stroke-width="8" fill="none"></circle>
+                            <circle cx="60" cy="60" r="50" stroke="#3b82f6" stroke-width="8" fill="none"
+                                stroke-dasharray="314.15" stroke-dashoffset="{314.15 - (314.15 * ctx['percent'] / 100)}"
+                                stroke-linecap="round" class="transition-all duration-700"></circle>
                         </svg>
                         <div class="absolute inset-0 flex flex-col items-center justify-center">
-                            <span class="text-2xl sm:text-3xl font-black">{ctx['percent']}%</span>
-                            <span class="text-xs opacity-70 font-medium">مصرف شده</span>
+                            <span class="text-lg font-bold mono-num text-slate-100">{ctx['percent']}%</span>
+                            <span class="text-[10px] text-slate-400">مصرف</span>
                         </div>
                     </div>
 
-                    <div class="flex-1 w-full space-y-3">
-                        <div class="flex justify-between items-center p-3 rounded-xl bg-slate-200/50 dark:bg-zinc-800/50">
-                            <span class="text-xs sm:text-sm opacity-75">کل حجم سرویس</span>
-                            <span dir="ltr" class="text-sm sm:text-base font-bold">{ctx['total_quota']}</span>
+                    <div class="flex-1 w-full space-y-2.5">
+                        <div class="flex justify-between items-center text-xs p-2 rounded-lg bg-white/[0.02]">
+                            <span class="text-slate-400">کل سهمیه</span>
+                            <span class="mono-num font-bold text-slate-200">{ctx['total_quota']}</span>
                         </div>
-                        <div class="flex justify-between items-center p-3 rounded-xl bg-slate-200/50 dark:bg-zinc-800/50">
-                            <span class="text-xs sm:text-sm opacity-75">حجم مصرفی</span>
-                            <span dir="ltr" class="text-sm sm:text-base font-bold text-amber-500">{ctx['used_traffic']}</span>
+                        <div class="flex justify-between items-center text-xs p-2 rounded-lg bg-white/[0.02]">
+                            <span class="text-slate-400">ترافیک مصرفی</span>
+                            <span class="mono-num font-bold text-amber-400">{ctx['used_traffic']}</span>
                         </div>
-                        <div class="flex justify-between items-center p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                            <span class="text-xs sm:text-sm font-bold text-emerald-600 dark:text-emerald-400">حجم باقی‌مانده</span>
-                            <span dir="ltr" class="text-sm sm:text-base font-bold text-emerald-600 dark:text-emerald-400">{ctx['remaining_traffic']}</span>
+                        <div class="flex justify-between items-center text-xs p-2 rounded-lg bg-emerald-500/[0.06] border border-emerald-500/20">
+                            <span class="text-emerald-400 font-semibold">باقی‌مانده</span>
+                            <span class="mono-num font-bold text-emerald-400">{ctx['remaining_traffic']}</span>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-4">
-                <div class="surface-card hover-lift p-5 sm:p-6 rounded-3xl flex flex-col justify-center">
-                    <div class="text-xs opacity-70 mb-1">تعداد سرورهای فعال</div>
-                    <div class="text-xl sm:text-2xl font-black text-right text-[#4b85d1]">{len(ctx['configs'])} سرور</div>
+            <div class="surface-box p-6 flex flex-col justify-between space-y-4">
+                <div>
+                    <div class="text-xs text-slate-400 mb-1">سرورهای در دسترس</div>
+                    <div class="text-xl font-bold mono-num text-blue-400">{len(ctx['configs'])} سرور</div>
                 </div>
-                <div class="surface-card hover-lift p-5 sm:p-6 rounded-3xl flex flex-col justify-center">
-                    <div class="text-xs opacity-70 mb-1">تاریخ انقضا</div>
-                    <div dir="ltr" class="text-sm sm:text-base font-bold text-right">{ctx['expire_date']}</div>
+                <div class="border-t border-white/[0.06] pt-4">
+                    <div class="text-xs text-slate-400 mb-1">انقضای زمانی</div>
+                    <div class="text-xs font-semibold mono-num text-slate-200">{ctx['expire_date']}</div>
                 </div>
-                <div class="surface-card hover-lift p-5 sm:p-6 rounded-3xl flex flex-col justify-center">
-                    <div class="text-xs opacity-70 mb-1">آخرین بروزرسانی</div>
-                    <div dir="ltr" class="flex items-center justify-end gap-2">
-                        <span class="text-xs sm:text-sm font-semibold">{ctx['now_jalali']}</span>
-                        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span>
-                    </div>
+                <div class="border-t border-white/[0.06] pt-4">
+                    <div class="text-xs text-slate-400 mb-1">بروزرسانی داده‌ها</div>
+                    <div class="text-xs mono-num text-slate-400">{ctx['now_jalali']}</div>
                 </div>
             </div>
         </div>
 
-        <div class="surface-card p-5 rounded-3xl mb-8 animate-enter stagger-2">
-            <div class="text-sm font-bold mb-3 flex items-center gap-2">
-                <svg class="w-4 h-4 text-[#4b85d1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                افزودن خودکار اشتراک به نرم‌افزار
-            </div>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <a href="{hiddify_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center transition-all">افزودن به Hiddify</a>
-                <a href="{v2rayng_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center transition-all">افزودن به v2rayNG</a>
-                <a href="{singbox_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center transition-all">افزودن به Sing-box</a>
-                <a href="{streisand_deep}" class="btn-press min-h-[42px] px-3 rounded-xl bg-[#4b85d1]/15 hover:bg-[#4b85d1] text-[#4b85d1] hover:text-white border border-[#4b85d1]/30 text-xs font-bold flex items-center justify-center transition-all">افزودن به Streisand</a>
-            </div>
-        </div>
-
-        <div class="w-full py-2 animate-enter stagger-3">
-            <div class="space-y-4">
-                <div class="flex flex-wrap items-center justify-between gap-3">
-                    <h2 class="text-lg sm:text-xl font-bold flex items-center gap-2">
-                        <svg class="w-5 h-5 text-[#4b85d1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                        لینک‌های اتصال و کانفیگ
-                    </h2>
-                    <div class="flex items-center gap-2">
-                        <input type="text" id="confSearch" oninput="filterConfigs()" placeholder="جستجوی سرور..." class="surface-card rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-[#4b85d1] w-36 sm:w-48">
-                        <button type="button" onclick="copyAll(this)" class="btn-press min-h-[42px] cursor-pointer flex items-center gap-2 px-4 text-xs sm:text-sm font-bold rounded-xl transition-all duration-200 bg-[#4b85d1] hover:bg-[#3671bf] text-white shadow-md">
-                            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
-                            <span>کپی همه</span>
-                        </button>
-                    </div>
+        <!-- لینک اختصاصی هوشمند -->
+        <div class="surface-box p-4 mb-6">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div class="min-w-0 w-full sm:w-auto">
+                    <div class="text-xs font-bold text-slate-300 mb-1">لینک اختصاصی اشتراک (Smart Sub)</div>
+                    <div class="text-xs mono-num text-slate-500 truncate">{ctx['sub_url']}</div>
                 </div>
-
-                <div class="p-4 rounded-2xl border-2 border-[#4b85d1]/50 bg-[#4b85d1]/10 transition-all duration-200">
-                    <div class="flex items-center gap-3">
-                        <span class="px-2.5 py-1 rounded-lg text-xs font-black bg-[#4b85d1] text-white shrink-0">SUB</span>
-                        <div class="flex-1 min-w-0">
-                            <div class="text-sm sm:text-base font-bold">لینک هوشمند اشتراک (پیشنهادی)</div>
-                            <div class="text-[11px] opacity-75 truncate font-mono mt-0.5" dir="ltr">{ctx['sub_url']}</div>
-                        </div>
-                        <div class="flex gap-2 shrink-0">
-                            <button type="button" onclick="copySubUrl(this)" aria-label="کپی لینک اشتراک" class="btn-press touch-target rounded-xl transition-all cursor-pointer bg-white dark:bg-zinc-800 hover:bg-[#4b85d1] hover:text-white shadow-xs" title="کپی لینک ساب">
-                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"></rect><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path></svg>
-                            </button>
-                            <button type="button" onclick="showSubQR()" aria-label="نمایش کد QR اشتراک" class="btn-press touch-target rounded-xl bg-white dark:bg-zinc-800 hover:bg-slate-200 dark:hover:bg-zinc-700 transition-all cursor-pointer shadow-xs" title="کد QR">
-                                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 12v4a1 1 0 0 1-1 1h-4"></path><path d="M17 3h2a2 2 0 0 1 2 2v2"></path><path d="M17 8V7"></path><path d="M21 17v2a2 2 0 0 1-2 2h-2"></path><path d="M3 7V5a2 2 0 0 1 2-2h2"></path><path d="M7 17h.01"></path><path d="M7 21H5a2 2 0 0 1-2-2v-2"></path><rect x="7" y="7" width="5" height="5" rx="1"></rect></svg>
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="max-h-[440px] overflow-y-auto space-y-2.5 pl-1 pr-0.5">
-                    {conf_items}
+                <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
+                    <button type="button" onclick="copySubUrl(this)" class="btn btn-primary px-4 py-2 text-xs flex-1 sm:flex-initial">کپی آدرس ساب</button>
+                    <button type="button" onclick="showSubQR()" class="btn btn-secondary px-3 py-2 text-xs" title="QR Code">QR</button>
                 </div>
             </div>
         </div>
 
-        <div class="my-12 animate-enter stagger-4">
-            <div class="flex items-center gap-4 mb-6">
-                <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-300 dark:via-zinc-800 to-transparent"></div>
-                <div class="px-5 py-2 rounded-full bg-[#4b85d1]/15 text-sm font-bold text-[#4b85d1] border border-[#4b85d1]/30">
-                    دریافت نرم‌افزارهای اتصال
+        <!-- اتصال مستقیم نرم‌افزار -->
+        <div class="surface-box p-4 mb-6">
+            <div class="text-xs font-bold text-slate-300 mb-3">ایمپورت تک‌کلیک به نرم‌افزار</div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <a href="{hiddify_deep}" class="btn btn-secondary py-2 text-xs">Hiddify</a>
+                <a href="{v2rayng_deep}" class="btn btn-secondary py-2 text-xs">v2rayNG</a>
+                <a href="{singbox_deep}" class="btn btn-secondary py-2 text-xs">Sing-box</a>
+                <a href="{streisand_deep}" class="btn btn-secondary py-2 text-xs">Streisand</a>
+            </div>
+        </div>
+
+        <!-- لیست کانفیگ‌ها -->
+        <div class="surface-box p-5 mb-8">
+            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h2 class="text-sm font-bold text-slate-200">فهرست کانفیگ‌های فعال</h2>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="confSearch" oninput="filterConfigs()" placeholder="فیلتر سرور..." class="input-field py-1.5 px-3 text-xs w-36 sm:w-48">
+                    <button type="button" onclick="copyAll(this)" class="btn btn-secondary px-3 py-1.5 text-xs">کپی یکجای همه</button>
                 </div>
-                <div class="flex-1 h-px bg-gradient-to-r from-transparent via-slate-300 dark:via-zinc-800 to-transparent"></div>
             </div>
+            <div class="max-h-96 overflow-y-auto space-y-2 pr-1">{conf_items}</div>
+        </div>
 
-            <div role="tablist" class="flex justify-center flex-wrap gap-2 mb-6">
-                <button type="button" onclick="switchTab('android')" id="tab-btn-android" class="tab-button btn-press active text-xs sm:text-sm cursor-pointer">اندروید</button>
-                <button type="button" onclick="switchTab('ios')" id="tab-btn-ios" class="tab-button btn-press text-xs sm:text-sm cursor-pointer">آیفون (iOS)</button>
-                <button type="button" onclick="switchTab('windows')" id="tab-btn-windows" class="tab-button btn-press text-xs sm:text-sm cursor-pointer">ویندوز</button>
-                <button type="button" onclick="switchTab('mac_linux')" id="tab-btn-mac_linux" class="tab-button btn-press text-xs sm:text-sm cursor-pointer">مک / لینوکس</button>
+        <!-- تب دانلود نرم‌افزارها -->
+        <div class="mb-10">
+            <div class="text-xs font-bold text-slate-400 mb-3 text-center">دانلود کلاینت‌های استاندارد اتصال</div>
+            <div class="flex justify-center gap-2 mb-4">
+                <button type="button" onclick="switchTab('android')" id="tab-btn-android" class="tab-btn active">اندروید</button>
+                <button type="button" onclick="switchTab('ios')" id="tab-btn-ios" class="tab-btn">آیفون (iOS)</button>
+                <button type="button" onclick="switchTab('windows')" id="tab-btn-windows" class="tab-btn">ویندوز</button>
+                <button type="button" onclick="switchTab('mac_linux')" id="tab-btn-mac_linux" class="tab-btn">مک / لینوکس</button>
             </div>
-
-            <div id="tab-android" class="platform-tab-content grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 animate-enter">{android_apps}</div>
-            <div id="tab-ios" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 animate-enter">{ios_apps}</div>
-            <div id="tab-windows" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 animate-enter">{win_apps}</div>
-            <div id="tab-mac_linux" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5 animate-enter">{mac_apps}</div>
+            <div id="tab-android" class="platform-tab-content grid grid-cols-2 sm:grid-cols-4 gap-3">{android_apps}</div>
+            <div id="tab-ios" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-4 gap-3">{ios_apps}</div>
+            <div id="tab-windows" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-4 gap-3">{win_apps}</div>
+            <div id="tab-mac_linux" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-4 gap-3">{mac_apps}</div>
         </div>
         """
 
@@ -1297,80 +1274,54 @@ def render_dashboard_html(ctx: dict) -> str:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>داشبورد اشتراک | {safe_brand}</title>
+    <title>اشتراک | {safe_brand}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
-    <script>tailwind.config = {{ darkMode: 'class' }}</script>
     <style>{ANIMATED_DESIGN_SYSTEM_CSS}</style>
 </head>
-<body class="min-h-screen flex flex-col justify-between overflow-x-hidden selection:bg-[#4b85d1] selection:text-white">
-
-    <main class="container mx-auto px-4 pt-10 pb-6 max-w-5xl relative z-10 flex-1">
-        <header class="flex items-center justify-between gap-4 mb-8 sm:mb-10 animate-enter">
-            <div class="flex-1 min-w-0">
-                <h1 class="text-2xl sm:text-4xl font-extrabold mb-1.5">داشبورد اشتراک</h1>
-                <div class="flex items-center gap-3 text-sm opacity-75">
-                    <p dir="ltr" class="font-bold text-[#4b85d1] truncate">{safe_brand}</p>
-                    <div class="flex items-center gap-1.5">
-                        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
-                        <span class="text-xs">سرور ابری</span>
-                    </div>
-                </div>
+<body class="min-h-screen flex flex-col justify-between">
+    <main class="container mx-auto px-4 py-8 max-w-4xl flex-1">
+        <header class="flex items-center justify-between mb-8 pb-4 border-b border-white/[0.06]">
+            <div>
+                <h1 class="text-lg sm:text-xl font-bold text-slate-100">سرویس اشتراک اختصاصی</h1>
+                <div class="text-xs text-blue-400 font-bold mono-num mt-0.5">{safe_brand}</div>
             </div>
-            <div class="flex items-center gap-2">
-                <button type="button" onclick="location.reload()" aria-label="بروزرسانی اطلاعات" class="btn-press touch-target rounded-xl surface-card hover:border-[#4b85d1] hover:text-[#4b85d1] transition-all cursor-pointer" title="بروزرسانی">
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"></path><path d="M16 16h5v5"></path></svg>
-                </button>
-                <button type="button" onclick="document.documentElement.classList.toggle('dark')" aria-label="تغییر تم" class="btn-press touch-target rounded-xl surface-card hover:border-[#4b85d1] hover:text-[#4b85d1] transition-all cursor-pointer" title="تغییر تم">
-                    <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"></circle><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></svg>
-                </button>
-            </div>
+            <button type="button" onclick="location.reload()" class="btn btn-secondary px-3 py-1.5 text-xs text-slate-300">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+                بروزرسانی
+            </button>
         </header>
 
         {main_section}
     </main>
 
-    <footer dir="rtl" class="relative w-full pb-8 pt-4 px-6 z-10">
-        <div class="container mx-auto max-w-5xl flex justify-center">
-            <div class="flex flex-col items-center gap-2.5">
-                <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" class="btn-press min-h-[42px] inline-flex items-center gap-2 px-5 rounded-xl bg-[#4b85d1]/10 hover:bg-[#4b85d1]/20 text-[#4b85d1] text-xs font-bold transition-all border border-[#4b85d1]/25">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-5 0a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
-                    <span>پشتیبانی تلگرام:</span>
-                    <span class="en-digits font-bold">@DARK_WIKI20</span>
-                </a>
-            </div>
-        </div>
+    <footer class="border-t border-white/[0.06] py-5 px-4 text-center">
+        <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors">
+            <span>پشتیبانی تلگرام:</span>
+            <span class="mono-num font-bold text-blue-400">@DARK_WIKI20</span>
+        </a>
     </footer>
 
-    <div id="toastBox" role="status" aria-live="polite" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-5 py-3 rounded-2xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 text-xs font-bold shadow-2xl animate-enter"></div>
-
-    <div id="qrModal" class="fixed inset-0 bg-black/65 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeQR()">
-        <div class="surface-card p-6 rounded-3xl shadow-2xl max-w-xs w-full flex flex-col items-center text-center animate-enter" onclick="event.stopPropagation()">
-            <h3 class="font-bold text-sm mb-4">اسکن کد QR</h3>
-            <img id="qrImage" src="" alt="QR Code" width="208" height="208" class="w-52 h-52 rounded-2xl mb-4 p-2.5 bg-white shadow-inner">
-            <button type="button" onclick="closeQR()" class="btn-press w-full min-h-[44px] bg-slate-200 dark:bg-zinc-800 hover:opacity-90 text-xs font-bold rounded-xl transition-opacity cursor-pointer">بستن</button>
+    <div id="qrModal" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeQR()">
+        <div class="surface-box p-6 rounded-2xl max-w-xs w-full flex flex-col items-center text-center" onclick="event.stopPropagation()">
+            <div class="font-bold text-xs text-slate-300 mb-3">اسکن اشتراک</div>
+            <img id="qrImage" src="" alt="QR Code" class="w-48 h-48 rounded-lg bg-white p-2 mb-4">
+            <button type="button" onclick="closeQR()" class="btn btn-secondary w-full py-2 text-xs">بستن</button>
         </div>
     </div>
+
+    <div id="toastBox" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2 rounded-lg bg-slate-100 text-slate-900 text-xs font-bold shadow-xl"></div>
 
     <script>
         const subUrl = {json.dumps(ctx['sub_url'])};
         const allConfigs = {ctx['configs_json']};
-        const checkSvg = '<svg class="w-4 h-4 text-emerald-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
 
         function switchTab(platform) {{
-            document.querySelectorAll('.platform-tab-content').forEach(el => {{
-                el.classList.add('hidden');
-                el.classList.remove('animate-enter');
-            }});
-            document.querySelectorAll('.tab-button').forEach(btn => btn.classList.remove('active'));
-            
+            document.querySelectorAll('.platform-tab-content').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
             const target = document.getElementById('tab-' + platform);
             const btn = document.getElementById('tab-btn-' + platform);
-            if (target) {{
-                target.classList.remove('hidden');
-                void target.offsetWidth;
-                target.classList.add('animate-enter');
-            }}
+            if (target) target.classList.remove('hidden');
             if (btn) btn.classList.add('active');
         }}
 
@@ -1388,32 +1339,23 @@ def render_dashboard_html(ctx: dict) -> str:
             setTimeout(() => box.classList.add("hidden"), 2000);
         }}
 
-        function animateCopyBtn(btn) {{
-            if (!btn) return;
-            const orig = btn.innerHTML;
-            btn.innerHTML = checkSvg;
-            setTimeout(() => {{ btn.innerHTML = orig; }}, 1200);
-        }}
-
         function copySubUrl(btn) {{
             navigator.clipboard.writeText(subUrl);
-            animateCopyBtn(btn);
-            showToast("لینک اشتراک کپی شد!");
+            showToast("لینک اشتراک کپی شد");
         }}
         function copyConfig(idx, btn) {{
             navigator.clipboard.writeText(allConfigs[idx]);
-            animateCopyBtn(btn);
-            showToast("کانفیگ کپی شد!");
+            showToast("کانفیگ سرور کپی شد");
         }}
         function copyAll(btn) {{
             if (allConfigs.length > 0) {{
                 navigator.clipboard.writeText(allConfigs.join("\\n"));
-                showToast("تمام کانفیگ‌ها کپی شدند!");
+                showToast("تمام کانفیگ‌ها کپی شدند");
             }}
         }}
 
         function openQRModal(text) {{
-            document.getElementById("qrImage").src = "https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" + encodeURIComponent(text);
+            document.getElementById("qrImage").src = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(text);
             document.getElementById("qrModal").classList.remove("hidden");
             document.getElementById("qrModal").classList.add("flex");
         }}
@@ -1513,7 +1455,6 @@ async def user_dashboard(request: Request, token: str):
     remaining = max(0, total_quota - used_traffic)
     percent = int((used_traffic / total_quota * 100)) if total_quota > 0 else 0
     percent = min(100, max(0, percent))
-    dashoffset = 440 - (440 * percent / 100)
 
     days_left = max(0, int((expire_ts - time.time()) // 86400)) if expire_ts > 0 else "نامحدود"
     expire_jalali = "نامحدود"
@@ -1532,7 +1473,6 @@ async def user_dashboard(request: Request, token: str):
         "is_online": is_online,
         "last_seen_text": last_seen_text,
         "percent": percent,
-        "dashoffset": dashoffset,
         "total_quota": format_bytes(total_quota),
         "used_traffic": format_bytes(used_traffic),
         "remaining_traffic": format_bytes(remaining),
@@ -1563,7 +1503,7 @@ async def admin_login(request: Request):
     client_ip = get_client_ip(request)
     if not check_rate_limit(client_ip):
         return HTMLResponse(
-            content=render_login_html(admin_path=ADMIN_SECRET_PATH, error="تعداد تلاش‌های ناموفق زیاد است. لطفاً ۱۰ دقیقه بعد امتحان کن."),
+            content=render_login_html(admin_path=ADMIN_SECRET_PATH, error="تلاش بیش از حد مجاز. لطفاً ۱۰ دقیقه بعد امتحان کنید."),
             status_code=429
         )
 
@@ -1667,7 +1607,7 @@ async def admin_restore_backup(request: Request):
         conn.commit()
 
     sub_cache.clear()
-    return JSONResponse(content={"ok": True, "msg": f"تعداد {restored_count} اشتراک با موفقیت بازگردانی شد."})
+    return JSONResponse(content={"ok": True, "msg": f"تعداد {restored_count} اشتراک با موفقیت بازیابی شد."})
 
 @app.post(f"/{ADMIN_SECRET_PATH}/cache/clear")
 async def clear_all_cache(request: Request):
@@ -1829,7 +1769,7 @@ async def telegram_webhook(req: Request):
             profile = conn.execute("SELECT * FROM profiles ORDER BY id DESC LIMIT 1").fetchone()
 
         if not profile:
-            caption = "هیچ پروفایلی در دیتاسنتر ثبت نشده است."
+            caption = "هیچ پروفایلی در سیستم ثبت نشده است."
         else:
             try:
                 sub_data = await get_cached_sub_data(profile["token"], profile["upstream_url"])
@@ -1841,7 +1781,7 @@ async def telegram_webhook(req: Request):
                 total_gb = tot / (1024**3)
                 remaining_gb = max(0.0, total_gb - used_gb)
                 
-                status_txt = "🟢 آنلاین و در حال استفاده" if sub_data.get("is_online") else f"⚪ آخرین استفاده: {sub_data.get('last_seen_text', 'نامشخص')}"
+                status_txt = "متصل" if sub_data.get("is_online") else f"آخرین استفاده: {sub_data.get('last_seen_text', 'نامشخص')}"
             except Exception:
                 used_gb = total_gb = remaining_gb = 0.0
                 status_txt = "نامشخص"
@@ -1851,15 +1791,15 @@ async def telegram_webhook(req: Request):
             dash_link = f"https://{clean_domain}/d/{profile['token']}"
 
             caption = (
-                f"🏷 Brand: {profile['name']}\n"
-                f"📶 Status: {status_txt}\n"
-                f"📊 Total: `{total_gb:.2f}` GB\n"
-                f"📉 Used: `{used_gb:.2f}` GB\n"
-                f"📈 Remaining: `{remaining_gb:.2f}` GB\n"
-                f"🔄 Client Syncs: `{profile['sub_hits'] or 0}`\n\n"
-                f"🌐 داشبورد وب:\n{dash_link}\n\n"
-                f"🔗 لینک ساب v2ray:\n`{sub_link}`\n\n"
-                f"⚡ Support: @DARK_WIKI20"
+                f"شناسه: {profile['name']}\n"
+                f"وضعیت: {status_txt}\n"
+                f"سقف: `{total_gb:.2f}` GB\n"
+                f"مصرف: `{used_gb:.2f}` GB\n"
+                f"باقی‌مانده: `{remaining_gb:.2f}` GB\n"
+                f"سینک‌های کلاینت: `{profile['sub_hits'] or 0}`\n\n"
+                f"داشبورد کاربر:\n{dash_link}\n\n"
+                f"لینک ساب:\n`{sub_link}`\n\n"
+                f"پشتیبانی: @DARK_WIKI20"
             )
 
         await http_client.post(
