@@ -29,7 +29,6 @@ PUBLIC_URL = (
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "SuperSecretLongPassword_987654321_ChangeMe!")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
-# مسیر امنیتی و مخفی ورود به پنل ادمین
 ADMIN_SECRET_PATH = os.getenv("ADMIN_SECRET_PATH", "manage-panel-x92").strip("/")
 
 SECRET_KEY = hashlib.sha256(f"{ADMIN_PASSWORD}_datacenter_v3_salt".encode()).digest()
@@ -222,7 +221,7 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- محاسبات تاریخ و ترافیک -----------------
+# ----------------- تاریخ و ترافیک -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
@@ -286,7 +285,7 @@ def format_timestamp_to_jalali(ts_val) -> str:
     except Exception:
         return "نامحدود"
 
-# ----------------- استخراج آخرین زمان اتصال از ساب اصلی -----------------
+# ----------------- استخراج زمان آخرین اتصال از لینک ساب -----------------
 def extract_last_online_from_html(html_text: str) -> str:
     if not html_text:
         return ""
@@ -429,7 +428,7 @@ def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
     except Exception:
         return False, "نامشخص"
 
-# ----------------- آپدیت ریمارک و اعمال حجم فیک -----------------
+# ----------------- آپدیت نام کانفیگ‌ها و اعمال حجم فیک -----------------
 def update_config_remark(name: str, fake_total_gb: float) -> str:
     name = name.strip()
     if not name:
@@ -597,7 +596,7 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- قالب اختصاصی داشبورد کاربران (UNSLOP & UI/UX PRO MAX) -----------------
+# ----------------- قالب اختصاصی داشبورد کاربران -----------------
 DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
@@ -634,7 +633,7 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
             display: inline-block;
         }
 
-        /* کارت‌های شیشه‌ای مایع (Liquid Glass) */
+        /* کارت‌های شیشه‌ای شفاف (Liquid Glass) */
         .glass-card {
             background: rgba(255, 255, 255, 0.03);
             backdrop-filter: blur(16px);
@@ -644,7 +643,6 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
             box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
         }
 
-        /* دکمه‌های مینیمال استاندارد */
         .ui-btn {
             display: inline-flex;
             align-items: center;
@@ -723,7 +721,7 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
 <body class="min-h-screen p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto space-y-6">
     <main class="space-y-6">
         
-        <!-- ۱. هدر مینیمال بدون سنسور اتصال -->
+        <!-- ۱. هدر شیشه‌ای با دکمه تازه‌سازی -->
         <header class="p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex justify-between items-center shadow-lg">
             <div>
                 <h1 class="text-lg sm:text-xl font-extrabold tracking-wide">__BRAND_NAME__</h1>
@@ -735,18 +733,22 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
             </button>
         </header>
 
-        <!-- ۲. کارت‌های اصلی دقیقا طبق ساختار تصویر ارسالی با پس‌زمینه شفاف -->
+        <!-- ۲. کارت‌های اصلی با روزشمار و آخرین اتصال در کنار هم و پس‌زمینه شیشه‌ای -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
             
-            <!-- کارت بزرگ: وضعیت، روزشمار، گیج و تفکیک حجم‌ها -->
+            <!-- کارت بزرگ: وضعیت، روزشمار به همراه اتصال در کنار آن، گیج و حجم‌ها -->
             <div class="lg:col-span-2 glass-card p-6 flex flex-col justify-between">
-                <div class="flex justify-between items-start mb-6">
-                    <div class="text-left">
-                        <div class="text-xs text-slate-400 mb-1">منقضی می‌شود در</div>
-                        <div class="text-2xl font-black mono-num text-slate-100">__DAYS_LEFT__ روز</div>
-                    </div>
+                <div class="flex flex-wrap justify-between items-center gap-4 mb-6">
                     <div>
                         __STATUS_BADGE__
+                    </div>
+                    <!-- وضعیت زنده اتصال درست در کنار روزشمار با فونت هماهنگ فارسی -->
+                    <div class="flex items-center gap-3">
+                        __ONLINE_STATUS_BOX__
+                        <div class="text-left bg-white/[0.03] border border-white/10 px-3.5 py-1.5 rounded-xl">
+                            <div class="text-[11px] text-slate-400">منقضی می‌شود در</div>
+                            <div class="text-lg sm:text-xl font-bold vazir-num text-slate-100">__DAYS_LEFT__ روز</div>
+                        </div>
                     </div>
                 </div>
 
@@ -782,7 +784,7 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
                 </div>
             </div>
 
-            <!-- ۳ کارت عمودی ستون کناری (فونت فارسی هماهنگ Vazirmatn FD) -->
+            <!-- ۳ کارت عمودی ستون کناری با فونت فارسی یکپارچه و پس‌زمینه شیشه‌ای شفاف -->
             <div class="flex flex-col gap-4">
                 <div class="glass-card p-4 flex flex-col justify-between flex-1">
                     <div class="text-xs text-slate-400 text-right">حجم کل</div>
@@ -795,8 +797,8 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
                 <div class="glass-card p-4 flex flex-col justify-between flex-1">
                     <div class="text-xs text-slate-400 text-right">آخرین اتصال</div>
                     <div class="text-sm font-bold vazir-num text-slate-100 text-right mt-2 flex items-center justify-start gap-1.5">
-                        <span class="w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-[0_0_6px_rgba(52,211,153,0.6)]"></span>
-                        <span>__LAST_SEEN_TEXT__</span>
+                        <span class="w-2 h-2 rounded-full __SIDE_DOT_COLOR__ inline-block"></span>
+                        <span>__LAST_SEEN_DISPLAY__</span>
                     </div>
                 </div>
             </div>
@@ -846,7 +848,7 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- ۵. تب‌بار کلاینت‌ها (تفکیک مک و لینوکس با ۴ برنامه مجزا برای هر کدام) -->
+        <!-- ۵. تب‌بار کلاینت‌ها (تفکیک ۵ سیستم‌عامل با ۴ برنامه اختصاصی برای هر کدام) -->
         <div class="pt-2 space-y-3">
             <div class="text-xs text-slate-400 text-center font-semibold">دانلود نرم‌افزار اتصال مخصوص سیستم شما</div>
             <div class="flex justify-center flex-wrap gap-1.5 p-1 rounded-xl bg-white/[0.03] border border-white/10 w-fit mx-auto">
@@ -857,7 +859,6 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
                 <button type="button" onclick="switchPlatform('linux', this)" class="tab-btn">Linux</button>
             </div>
             
-            <!-- ۴ برنامه برای هر سیستم‌عامل -->
             <div id="platform-android" class="platform-tab grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
                 <a href="https://github.com/hiddify/hiddify-next/releases" target="_blank" class="ui-btn ui-btn-primary">Hiddify</a>
                 <a href="https://github.com/2dust/v2rayNG/releases" target="_blank" class="ui-btn">v2rayNG</a>
@@ -891,7 +892,6 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
     </main>
 
-    <!-- فوتر -->
     <footer class="pt-8 pb-4 text-center">
         <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" class="text-xs text-slate-400 hover:text-slate-200 transition-colors">
             پشتیبانی تلگرام: <span class="mono-num font-bold text-blue-400">@DARK_WIKI20</span>
@@ -1007,16 +1007,29 @@ def render_dashboard_html(ctx: dict) -> str:
         '<div class="text-2xl font-bold text-emerald-400 flex items-center gap-2">فعال <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]"></span></div>'
     )
 
+    # نمایش وضعیت اتصال در کنار روزشمار
+    if ctx["is_online"]:
+        online_status_box = '<div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold"><span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse"></span>در حال استفاده (روشن)</div>'
+        side_dot_color = "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]"
+        last_seen_display = '<span class="text-emerald-400 font-bold">در حال استفاده</span>'
+    else:
+        last_s = ctx["last_seen_text"] or ctx["now_jalali"]
+        online_status_box = f'<div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 text-slate-300 text-xs font-medium"><span class="w-2 h-2 rounded-full bg-slate-500"></span>آخرین اتصال: <span class="vazir-num text-slate-200">{last_s}</span></div>'
+        side_dot_color = "bg-slate-500"
+        last_seen_display = f'<span class="vazir-num text-slate-200">{last_s}</span>'
+
     return (
         DASHBOARD_HTML_TEMPLATE
         .replace("__BRAND_NAME__", html.escape(ctx["brand_name"]))
         .replace("__DAYS_LEFT__", str(ctx["days_left"]))
         .replace("__STATUS_BADGE__", status_badge)
+        .replace("__ONLINE_STATUS_BOX__", online_status_box)
         .replace("__TOTAL_QUOTA__", str(ctx["total_quota"]))
         .replace("__USED_TRAFFIC__", str(ctx["used_traffic"]))
         .replace("__REMAINING_TRAFFIC__", str(ctx["remaining_traffic"]))
         .replace("__EXPIRE_DATE__", str(ctx["expire_date"]))
-        .replace("__LAST_SEEN_TEXT__", str(ctx["last_seen_text"] or ctx["now_jalali"]))
+        .replace("__LAST_SEEN_DISPLAY__", last_seen_display)
+        .replace("__SIDE_DOT_COLOR__", side_dot_color)
         .replace("__SUB_URL__", str(ctx["sub_url"]))
         .replace("__PERCENT__", str(percent))
         .replace("__DASHOFFSET__", str(dashoffset))
@@ -1570,6 +1583,8 @@ async def user_dashboard(request: Request, token: str):
 
     used_traffic = upload + download
     remaining = max(0, total_quota - used_traffic)
+    
+    # محاسبه درصد کاملاً بر مبنای حجم فیک
     percent = int((used_traffic / total_quota * 100)) if total_quota > 0 else 0
     percent = min(100, max(0, percent))
 
