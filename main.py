@@ -16,6 +16,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import Response, HTMLResponse, RedirectResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 
 BRAND_DEFAULT = os.getenv("BRAND_NAME", "VIP")
@@ -27,7 +28,7 @@ PUBLIC_URL = (
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "SuperSecretLongPassword_987654321_ChangeMe!")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
-# مسیر امنیتی مدیریت (قابل شخصی‌سازی در متغیرهای محیطی)
+# مسیر امنیتی و مخفی ورود به پنل ادمین
 ADMIN_SECRET_PATH = os.getenv("ADMIN_SECRET_PATH", "manage-panel-x92").strip("/")
 
 SECRET_KEY = hashlib.sha256(f"{ADMIN_PASSWORD}_datacenter_v3_salt".encode()).digest()
@@ -47,6 +48,9 @@ MAX_UPSTREAM_BYTES = 2097152
 sub_cache = {}
 login_attempts = {}
 http_client: httpx.AsyncClient = None
+
+# اطمینان از وجود پوشه استاتیک برای جلوگیری از کرش بیلد
+os.makedirs("dist/assets", exist_ok=True)
 
 # ----------------- دیتابیس -----------------
 def get_db():
@@ -119,6 +123,9 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
+
+# ماونت کردن فایل‌های استاتیک کامپایل‌شده Vite
+app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
 
 # ----------------- توابع امنیتی -----------------
 def create_session_token() -> str:
@@ -198,7 +205,7 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- تاریخ و ترافیک -----------------
+# ----------------- پردازش ترافیک و تاریخ -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
@@ -511,180 +518,99 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- دیزاین سیستم اصلاح‌شده (UNSLOP) -----------------
-ANIMATED_DESIGN_SYSTEM_CSS = """
+# ----------------- رابط کاربری پنل ادمین -----------------
+ADMIN_PANEL_CSS = """
 :root {
-    --bg-base: #090a0f;
-    --bg-surface: #11131a;
-    --bg-surface-elevated: #161922;
-    --bg-input: #0c0e14;
-    
-    --border-subtle: rgba(255, 255, 255, 0.07);
-    --border-hover: rgba(255, 255, 255, 0.16);
-    --border-focus: #3b82f6;
-
-    --text-primary: #f8fafc;
-    --text-secondary: #94a3b8;
-    --text-muted: #64748b;
-
-    --accent-primary: #3b82f6;
-    --accent-hover: #2563eb;
-    --accent-subtle: rgba(59, 130, 246, 0.12);
-    --accent-border: rgba(59, 130, 246, 0.28);
-
-    --status-active-bg: rgba(16, 185, 129, 0.1);
-    --status-active-text: #34d399;
-    --status-active-border: rgba(16, 185, 129, 0.25);
-
-    --status-danger-bg: rgba(244, 63, 94, 0.1);
-    --status-danger-text: #fb7185;
-    --status-danger-border: rgba(244, 63, 94, 0.25);
+    --bg-base: #07090e;
+    --glass-bg: rgba(18, 24, 38, 0.65);
+    --glass-border: rgba(255, 255, 255, 0.12);
+    --glass-highlight: rgba(255, 255, 255, 0.2);
 }
-
-* {
-    box-sizing: border-box;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
-}
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.18); border-radius: 9999px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.35); }
-
+* { box-sizing: border-box; }
 body {
-    font-family: 'Vazirmatn FD', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: 'Vazirmatn FD', sans-serif;
     background-color: var(--bg-base);
-    color: var(--text-primary);
-    -webkit-font-smoothing: antialiased;
+    color: #f1f5f9;
+    min-height: 100vh;
 }
-
 .mono-num {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
-    font-variant-numeric: tabular-nums;
+    font-family: ui-monospace, SFMono-Regular, monospace !important;
     direction: ltr !important;
     display: inline-block;
 }
-
-.surface-box {
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
-    border-radius: 16px;
+.glass-container {
+    background: var(--glass-bg);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 8px 32px 0 rgba(0,0,0,0.45), inset 0 1px 1px 0 var(--glass-highlight);
+    border-radius: 18px;
 }
-
-.surface-card {
-    background-color: var(--bg-surface);
-    border: 1px solid var(--border-subtle);
-    border-radius: 14px;
-    transition: border-color 0.15s ease;
-}
-.surface-card:hover {
-    border-color: var(--border-hover);
-}
-
-.btn {
+.btn-glass {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    gap: 0.5rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    line-height: 1;
-    border-radius: 10px;
-    transition: all 0.14s ease;
-    cursor: pointer;
-    user-select: none;
-    border: 1px solid transparent;
-}
-.btn:active {
-    transform: scale(0.97);
-}
-
-.btn-primary {
-    background-color: var(--accent-primary);
-    color: #ffffff;
-}
-.btn-primary:hover {
-    background-color: var(--accent-hover);
-}
-
-.btn-secondary {
-    background-color: var(--bg-surface-elevated);
-    border: 1px solid var(--border-subtle);
-    color: var(--text-primary);
-}
-.btn-secondary:hover {
-    background-color: #1e2230;
-    border-color: var(--border-hover);
-}
-
-.input-field {
-    width: 100%;
-    background-color: var(--bg-input);
-    border: 1px solid var(--border-subtle);
-    border-radius: 10px;
-    padding: 0.65rem 0.875rem;
-    font-size: 0.8125rem;
-    color: var(--text-primary);
-    outline: none;
-    transition: border-color 0.15s ease;
-}
-.input-field:focus {
-    border-color: var(--border-focus);
-}
-
-.tab-btn {
     padding: 0.55rem 1rem;
-    border-radius: 10px;
     font-size: 0.8125rem;
     font-weight: 600;
-    color: var(--text-secondary);
-    background: transparent;
-    border: 1px solid transparent;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: #ffffff;
     cursor: pointer;
     transition: all 0.15s ease;
 }
-.tab-btn.active {
+.btn-glass:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.3);
+}
+.btn-glass:active { transform: scale(0.97); }
+.btn-primary {
+    background: #2563eb;
+    border-color: #3b82f6;
+}
+.btn-primary:hover { background: #1d4ed8; }
+.btn-danger {
+    background: rgba(244, 63, 94, 0.15);
+    border-color: rgba(244, 63, 94, 0.35);
+    color: #fb7185;
+}
+.glass-input {
+    width: 100%;
+    background: rgba(10, 14, 22, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    padding: 0.6rem 0.85rem;
+    font-size: 0.8125rem;
     color: #ffffff;
-    background-color: var(--bg-surface-elevated);
-    border-color: var(--border-subtle);
+    outline: none;
 }
-.tab-btn:hover:not(.active) {
-    color: var(--text-primary);
-}
+.glass-input:focus { border-color: #3b82f6; }
 """
 
 def render_login_html(admin_path: str, error: str = None) -> str:
-    err_box = f"""
-    <div class="p-3 mb-4 rounded-xl text-xs font-semibold text-center border" style="background-color: var(--status-danger-bg); color: var(--status-danger-text); border-color: var(--status-danger-border);">
-        {html.escape(error)}
-    </div>""" if error else ""
-
+    err_box = f'<div class="p-3 mb-4 rounded-xl text-xs font-semibold text-center border border-rose-500/30 bg-rose-500/15 text-rose-400">{html.escape(error)}</div>' if error else ""
     return f"""<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدیریت | ورود ادمین</title>
+    <title>مدیریت | ورود به سیستم</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
-    <style>{ANIMATED_DESIGN_SYSTEM_CSS}</style>
+    <style>{ADMIN_PANEL_CSS}</style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
-    <div class="surface-box w-full max-w-sm p-6 sm:p-8 shadow-2xl">
-        <div class="flex items-center justify-center mb-6">
-            <div class="w-12 h-12 rounded-xl flex items-center justify-center bg-blue-500/10 border border-blue-500/25 text-blue-400">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" stroke-width="2"></rect><path d="M7 11V7a5 5 0 0110 0v4" stroke-width="2"></path></svg>
-            </div>
-        </div>
-        <h1 class="text-base font-bold text-center mb-1 text-slate-100">احراز هویت سرور</h1>
-        <p class="text-xs text-slate-400 text-center mb-6">دسترسی محدود به مدیر دیتاسنتر</p>
+    <div class="glass-container w-full max-w-sm p-6 sm:p-8">
+        <h1 class="text-base font-bold text-center mb-1">احراز هویت سرور</h1>
+        <p class="text-xs text-slate-400 text-center mb-6">کنترل پنل مرکزی دیتاسنتر</p>
         {err_box}
         <form action="/{admin_path}/login" method="post" class="space-y-4">
             <div>
                 <label for="admin_pass" class="block text-xs text-slate-400 mb-1.5 font-medium">رمز عبور امنیتی</label>
-                <input id="admin_pass" type="password" name="password" required autofocus class="input-field mono-num text-left">
+                <input id="admin_pass" type="password" name="password" required autofocus class="glass-input mono-num text-left">
             </div>
-            <button type="submit" class="btn btn-primary w-full py-2.5">ورود به پنل</button>
+            <button type="submit" class="btn-glass btn-primary w-full py-2.5">ورود به سیستم</button>
         </form>
     </div>
 </body>
@@ -723,13 +649,13 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
             online_badge = "<span class='text-xs text-slate-500'>—</span>"
 
         status_badge = (
-            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border" style="background-color: var(--status-danger-bg); color: var(--status-danger-text); border-color: var(--status-danger-border);">مسدود</span>'
+            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-400">مسدود</span>'
             if p["is_blocked"] else
-            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border" style="background-color: var(--status-active-bg); color: var(--status-active-text); border-color: var(--status-active-border);">فعال</span>'
+            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">فعال</span>'
         )
         fake_label = f"<span class='mono-num text-xs text-blue-400 font-bold'>{fake_val:g} GB</span>" if fake_val > 0 else "<span class='text-slate-500 text-xs'>واقعی</span>"
         
-        btn_class = "btn-secondary text-emerald-400 border-emerald-500/30 hover:border-emerald-500/50" if p["is_blocked"] else "btn-secondary text-amber-400 border-amber-500/30 hover:border-amber-500/50"
+        btn_class = "btn-glass text-emerald-400 border-emerald-500/30" if p["is_blocked"] else "btn-glass text-amber-400 border-amber-500/30"
         btn_text = "فعال‌سازی" if p["is_blocked"] else "مسدود"
         
         p_json = html.escape(json.dumps({
@@ -744,7 +670,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
         dash_url = f"https://{domain}/d/{safe_token}"
         sub_url = f"https://{domain}/sub/{safe_token}"
         note_html = f'<div class="text-[11px] text-amber-400/80 mt-1 font-mono leading-tight">{safe_note}</div>' if safe_note else ''
-        notice_indicator = '<span class="inline-block mr-1 text-[10px] px-1.5 py-0.2 rounded border border-blue-500/30 bg-blue-500/10 text-blue-400">اعلان</span>' if safe_notice else ''
+        notice_indicator = '<span class="inline-block mr-1 text-[10px] px-1.5 py-0.2 rounded border border-blue-400/30 bg-blue-500/15 text-blue-300">اعلان</span>' if safe_notice else ''
 
         rows += f"""
         <tr class="profile-row border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors" data-name="{safe_name.lower()} {safe_token.lower()} {safe_note.lower()}" data-status="{'blocked' if p['is_blocked'] else 'active'}">
@@ -754,10 +680,10 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
             </td>
             <td class="p-3.5 whitespace-nowrap">
                 <div class="flex items-center gap-1.5">
-                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn btn-secondary px-2.5 py-1 text-xs">داشبورد</button>
-                    <button type="button" onclick="copyText('{sub_url}', 'لینک اشتراک کپی شد')" class="btn btn-secondary px-2.5 py-1 text-xs">ساب</button>
-                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn btn-secondary p-1.5" title="QR Code">
-                        <svg class="w-3.5 h-3.5 text-slate-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn-glass px-2.5 py-1 text-xs">داشبورد</button>
+                    <button type="button" onclick="copyText('{sub_url}', 'لینک اشتراک کپی شد')" class="btn-glass px-2.5 py-1 text-xs">ساب</button>
+                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn-glass p-1.5" title="QR Code">
+                        <svg class="w-3.5 h-3.5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                     </button>
                 </div>
             </td>
@@ -771,20 +697,20 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
             <td class="p-3.5 whitespace-nowrap text-center">{status_badge}</td>
             <td class="p-3.5 whitespace-nowrap text-left">
                 <div class="flex justify-end items-center gap-1.5">
-                    <button type="button" onclick="openEditModal({p_json})" class="btn btn-secondary px-2.5 py-1 text-xs">ویرایش</button>
+                    <button type="button" onclick="openEditModal({p_json})" class="btn-glass px-2.5 py-1 text-xs">ویرایش</button>
                     <form action="/{admin_path}/profiles/{safe_token}/refresh-cache" method="post" class="m-0">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn btn-secondary p-1.5 text-slate-400" title="تازه‌سازی کش">
+                        <button type="submit" class="btn-glass p-1.5 text-slate-300" title="تازه‌سازی کش">
                             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
                         </button>
                     </form>
                     <form action="/{admin_path}/profiles/{safe_token}/toggle-block" method="post" class="m-0">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn px-2.5 py-1 text-xs {btn_class}">{btn_text}</button>
+                        <button type="submit" class="btn-glass px-2.5 py-1 text-xs {btn_class}">{btn_text}</button>
                     </form>
                     <form action="/{admin_path}/profiles/{safe_token}/delete" method="post" class="m-0" onsubmit="return confirm('تایید حذف نهایی ساب؟');">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn btn-secondary px-2.5 py-1 text-xs text-rose-400 border-rose-500/30 hover:border-rose-500/50">حذف</button>
+                        <button type="submit" class="btn-glass btn-danger px-2.5 py-1 text-xs">حذف</button>
                     </form>
                 </div>
             </td>
@@ -798,118 +724,102 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>داشبورد مدیریت دیتاسنتر</title>
+    <title>مدیریت سرویس | کنترل پنل مرکزی</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
-    <style>{ANIMATED_DESIGN_SYSTEM_CSS}</style>
+    <style>{ADMIN_PANEL_CSS}</style>
 </head>
 <body class="min-h-screen p-4 sm:p-6 lg:p-8">
     <div class="max-w-7xl mx-auto space-y-6">
-        
-        <!-- هدر کنترل پنل -->
-        <header class="surface-box p-5 flex flex-wrap justify-between items-center gap-4">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/25 flex items-center justify-center text-blue-400">
-                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
-                </div>
-                <div>
-                    <h1 class="text-base font-bold text-slate-100">کنترل پنل مرکزی</h1>
-                    <div class="text-xs text-slate-500 mono-num mt-0.5">{domain}</div>
-                </div>
+        <header class="glass-container p-5 flex flex-wrap justify-between items-center gap-4">
+            <div>
+                <h1 class="text-base font-bold text-slate-100">کنترل پنل مرکزی دیتاسنتر</h1>
+                <div class="text-xs text-slate-400 mono-num mt-0.5">{domain}</div>
             </div>
             <div class="flex flex-wrap items-center gap-2">
                 <form action="/{admin_path}/cache/clear" method="post" class="m-0">
                     <input type="hidden" name="csrf_token" value="{csrf_token}">
-                    <button type="submit" class="btn btn-secondary px-3 py-2 text-xs">پاکسازی کش ({cached_items})</button>
+                    <button type="submit" class="btn-glass px-3 py-2 text-xs">پاکسازی کش ({cached_items})</button>
                 </form>
-                <a href="/{admin_path}/backup" class="btn btn-secondary px-3 py-2 text-xs text-blue-400">دانلود بکاپ JSON</a>
-                <a href="/{admin_path}/logout" class="btn btn-secondary px-3 py-2 text-xs text-rose-400">خروج</a>
+                <a href="/{admin_path}/backup" class="btn-glass px-3 py-2 text-xs text-blue-300">دانلود بکاپ JSON</a>
+                <a href="/{admin_path}/logout" class="btn-glass btn-danger px-3 py-2 text-xs">خروج</a>
             </div>
         </header>
 
-        <!-- آمار کلی سیستم (KPI) -->
         <section class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <div class="surface-card p-4">
+            <div class="glass-container p-4">
                 <div class="text-xs text-slate-400 mb-1">کل اشتراک‌ها</div>
                 <div class="text-2xl font-bold mono-num text-slate-100">{total_count}</div>
             </div>
-            <div class="surface-card p-4">
+            <div class="glass-container p-4">
                 <div class="text-xs text-slate-400 mb-1">فعال</div>
                 <div class="text-2xl font-bold mono-num text-emerald-400">{active_count}</div>
             </div>
-            <div class="surface-card p-4">
+            <div class="glass-container p-4">
                 <div class="text-xs text-slate-400 mb-1">مسدود شده</div>
                 <div class="text-2xl font-bold mono-num text-rose-400">{blocked_count}</div>
             </div>
-            <div class="surface-card p-4">
-                <div class="text-xs text-slate-400 mb-1">درخواست‌های آپدیت کلاینت</div>
+            <div class="glass-container p-4">
+                <div class="text-xs text-slate-400 mb-1">سینک‌های کلاینت</div>
                 <div class="text-2xl font-bold mono-num text-blue-400">{total_hits}</div>
             </div>
         </section>
 
-        <!-- ثبت اشتراک و بازیابی بکاپ -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <section class="lg:col-span-2 surface-box p-5">
-                <h2 class="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2">
-                    <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
-                    ثبت اشتراک جدید
-                </h2>
+            <section class="lg:col-span-2 glass-container p-5">
+                <h2 class="text-sm font-bold text-slate-200 mb-4">ثبت اشتراک جدید</h2>
                 <form action="/{admin_path}/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                     <input type="hidden" name="csrf_token" value="{csrf_token}">
                     <div>
-                        <label class="block text-xs text-slate-400 mb-1">نام یا شناسه کاربری *</label>
-                        <input type="text" name="name" placeholder="User-VIP" required class="input-field">
+                        <label class="block text-xs text-slate-400 mb-1">نام یا شناسه کاربر *</label>
+                        <input type="text" name="name" placeholder="User-VIP" required class="glass-input">
                     </div>
                     <div>
                         <label class="block text-xs text-slate-400 mb-1">لینک مستقیم فروشنده (Upstream) *</label>
-                        <input type="url" name="upstream_url" placeholder="https://panel.site/sub/..." required class="input-field mono-num text-left">
+                        <input type="url" name="upstream_url" placeholder="https://panel.site/sub/..." required class="glass-input mono-num text-left">
                     </div>
                     <div>
                         <label class="block text-xs text-slate-400 mb-1">حجم مجازی کل (GB) — اختیاری</label>
-                        <input type="number" step="0.1" min="0" name="fake_total_gb" placeholder="0 = حجم واقعی" class="input-field mono-num text-left">
+                        <input type="number" step="0.1" min="0" name="fake_total_gb" placeholder="0 = حجم واقعی" class="glass-input mono-num text-left">
                     </div>
                     <div>
                         <label class="block text-xs text-slate-400 mb-1">توکن اختصاصی لینک (اختیاری)</label>
-                        <input type="text" name="custom_token" placeholder="خالی = تصادفی" class="input-field mono-num text-left">
+                        <input type="text" name="custom_token" placeholder="خالی = خودکار" class="glass-input mono-num text-left">
                     </div>
                     <div>
-                        <label class="block text-xs text-slate-400 mb-1">اعلان اختصاصی در داشبورد</label>
-                        <input type="text" name="custom_notice" placeholder="متن پیام به کاربر..." class="input-field">
+                        <label class="block text-xs text-slate-400 mb-1">اعلان داشبورد</label>
+                        <input type="text" name="custom_notice" placeholder="متن پیام به کاربر..." class="glass-input">
                     </div>
                     <div>
                         <label class="block text-xs text-slate-400 mb-1">یادداشت داخلی ادمین</label>
-                        <input type="text" name="admin_note" placeholder="آیدی تلگرام، تاریخ و..." class="input-field">
+                        <input type="text" name="admin_note" placeholder="آیدی تلگرام، تاریخ و..." class="glass-input">
                     </div>
                     <div class="md:col-span-2 pt-2">
-                        <button type="submit" class="btn btn-primary px-6 py-2.5">ایجاد و ذخیره اشتراک</button>
+                        <button type="submit" class="btn-glass btn-primary px-6 py-2.5">ایجاد و ذخیره اشتراک</button>
                     </div>
                 </form>
             </section>
 
-            <section class="surface-box p-5 flex flex-col justify-between">
+            <section class="glass-container p-5 flex flex-col justify-between">
                 <div>
-                    <h2 class="text-sm font-bold text-slate-200 mb-2 flex items-center gap-2">
-                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
-                        بازگردانی داده‌ها از بکاپ
-                    </h2>
-                    <p class="text-xs text-slate-400 mb-4 leading-relaxed">فایل JSON بکاپ قبلی خود را برای بازیابی سریع در کادر زیر انتخاب کنید.</p>
-                    <input type="file" id="dashboardBackupFile" accept=".json" class="input-field text-xs mb-3">
+                    <h2 class="text-sm font-bold text-slate-200 mb-2">بازگردانی داده‌ها از بکاپ</h2>
+                    <p class="text-xs text-slate-400 mb-4 leading-relaxed">فایل JSON بکاپ قبلی خود را برای بازیابی سریع انتخاب کنید.</p>
+                    <input type="file" id="dashboardBackupFile" accept=".json" class="glass-input text-xs mb-3">
                     <label class="flex items-center gap-2 text-xs text-slate-300 select-none cursor-pointer">
                         <input type="checkbox" id="overwrite_backup_chk" class="rounded border-zinc-700 bg-zinc-900">
                         <span>به‌روزرسانی رکوردهای تکراری</span>
                     </label>
                 </div>
-                <button type="button" onclick="uploadAndRestoreBackup()" id="btnUploadBackup" class="btn btn-secondary w-full py-2.5 mt-4 text-emerald-400">آپلود و بازیابی اطلاعات</button>
+                <button type="button" onclick="uploadAndRestoreBackup()" id="btnUploadBackup" class="btn-glass w-full py-2.5 mt-4 text-emerald-400">آپلود و اعمال بکاپ</button>
             </section>
         </div>
 
-        <!-- جدول لیست ساب‌ها -->
-        <section class="surface-box overflow-hidden">
+        <section class="glass-container overflow-hidden">
             <div class="p-4 border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <h2 class="text-sm font-bold text-slate-200">فهرست اشتراک‌ها ({total_count})</h2>
                 <div class="flex items-center gap-2">
-                    <input type="text" id="searchInput" oninput="filterTable()" placeholder="جستجو نام، توکن، یادداشت..." class="input-field py-1.5 px-3 text-xs w-60">
-                    <select id="statusFilter" onchange="filterTable()" class="input-field py-1.5 px-3 text-xs w-28">
+                    <input type="text" id="searchInput" oninput="filterTable()" placeholder="جستجو نام، توکن، یادداشت..." class="glass-input py-1.5 px-3 text-xs w-60">
+                    <select id="statusFilter" onchange="filterTable()" class="glass-input py-1.5 px-3 text-xs w-28">
                         <option value="all">همه</option>
                         <option value="active">فعال</option>
                         <option value="blocked">مسدود</option>
@@ -922,7 +832,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
                         <tr>
                             <th class="p-3.5 whitespace-nowrap">کاربر</th>
                             <th class="p-3.5 whitespace-nowrap">لینک‌ها</th>
-                            <th class="p-3.5 whitespace-nowrap text-center">وضعیت لایو</th>
+                            <th class="p-3.5 whitespace-nowrap text-center">وضعیت</th>
                             <th class="p-3.5 whitespace-nowrap text-center">حجم مجازی</th>
                             <th class="p-3.5 whitespace-nowrap text-center">مصرف / سقف</th>
                             <th class="p-3.5 whitespace-nowrap">همگام‌سازی</th>
@@ -936,50 +846,48 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
         </section>
     </div>
 
-    <!-- مدال ویرایش -->
-    <div id="editModal" class="fixed inset-0 bg-black/70 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
-        <div class="surface-box rounded-2xl p-6 max-w-md w-full shadow-2xl" onclick="event.stopPropagation()">
-            <h3 class="text-base font-bold mb-4 text-slate-100">ویرایش اشتراک</h3>
+    <div id="editModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
+        <div class="glass-container p-6 max-w-md w-full shadow-2xl" onclick="event.stopPropagation()">
+            <h3 class="text-base font-bold mb-4 text-slate-100">ویرایش اطلاعات ساب</h3>
             <form id="editForm" method="post" class="space-y-3">
                 <input type="hidden" name="csrf_token" value="{csrf_token}">
                 <div>
                     <label class="block text-xs text-slate-400 mb-1">نام یا شناسه کاربر</label>
-                    <input type="text" id="edit_name" name="name" required class="input-field">
+                    <input type="text" id="edit_name" name="name" required class="glass-input">
                 </div>
                 <div>
                     <label class="block text-xs text-slate-400 mb-1">لینک مستقیم فروشنده</label>
-                    <input type="url" id="edit_upstream" name="upstream_url" required class="input-field mono-num text-left">
+                    <input type="url" id="edit_upstream" name="upstream_url" required class="glass-input mono-num text-left">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">حجم مجازی کل (GB) — 0 یعنی واقعی</label>
-                    <input type="number" step="0.1" min="0" id="edit_fake" name="fake_total_gb" required class="input-field mono-num text-left">
+                    <label class="block text-xs text-slate-400 mb-1">حجم مجازی کل (GB)</label>
+                    <input type="number" step="0.1" min="0" id="edit_fake" name="fake_total_gb" required class="glass-input mono-num text-left">
                 </div>
                 <div>
                     <label class="block text-xs text-slate-400 mb-1">اعلان داشبورد</label>
-                    <input type="text" id="edit_notice" name="custom_notice" class="input-field">
+                    <input type="text" id="edit_notice" name="custom_notice" class="glass-input">
                 </div>
                 <div>
                     <label class="block text-xs text-slate-400 mb-1">یادداشت داخلی ادمین</label>
-                    <input type="text" id="edit_note" name="admin_note" class="input-field">
+                    <input type="text" id="edit_note" name="admin_note" class="glass-input">
                 </div>
                 <div class="flex gap-2 pt-3">
-                    <button type="submit" class="btn btn-primary flex-1 py-2">ذخیره تغییرات</button>
-                    <button type="button" onclick="closeEditModal()" class="btn btn-secondary px-4 py-2">انصراف</button>
+                    <button type="submit" class="btn-glass btn-primary flex-1 py-2">ذخیره تغییرات</button>
+                    <button type="button" onclick="closeEditModal()" class="btn-glass px-4 py-2">انصراف</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- مدال QR -->
-    <div id="adminQrModal" class="fixed inset-0 bg-black/70 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeAdminQR()">
-        <div class="surface-box p-6 rounded-2xl max-w-xs w-full flex flex-col items-center text-center" onclick="event.stopPropagation()">
+    <div id="adminQrModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4" onclick="closeAdminQR()">
+        <div class="glass-container p-6 max-w-xs w-full flex flex-col items-center text-center" onclick="event.stopPropagation()">
             <div id="adminQrTitle" class="font-bold text-xs text-slate-300 mb-4 truncate w-full">QR Code</div>
-            <img id="adminQrImg" src="" alt="QR" class="w-48 h-48 rounded-lg mb-4 bg-white p-2">
-            <button type="button" onclick="closeAdminQR()" class="btn btn-secondary w-full py-2 text-xs">بستن</button>
+            <img id="adminQrImg" src="" alt="QR" class="w-48 h-48 rounded-xl mb-4 bg-white p-2.5 shadow-md">
+            <button type="button" onclick="closeAdminQR()" class="btn-glass w-full py-2 text-xs">بستن</button>
         </div>
     </div>
 
-    <div id="adminToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2 rounded-lg bg-slate-100 text-slate-900 text-xs font-bold shadow-xl"></div>
+    <div id="adminToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2.5 rounded-xl bg-white/90 text-slate-900 backdrop-blur-md text-xs font-bold shadow-2xl"></div>
 
     <script>
         const adminCsrfToken = "{csrf_token}";
@@ -1069,310 +977,10 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
 </body>
 </html>"""
 
-def render_app_card(name_html: str, url: str, btn_label: str, recommended: bool = False) -> str:
-    rec_badge = '<span class="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/25 px-2 py-0.5 rounded-full mb-2 inline-block">پیشنهادی</span>' if recommended else '<span class="text-[10px] text-transparent mb-2 inline-block select-none">—</span>'
-    return f"""
-    <div class="surface-card p-4 flex flex-col items-center justify-between text-center">
-        <div>
-            {rec_badge}
-            <div class="font-bold text-sm text-slate-200 mb-3">{name_html}</div>
-        </div>
-        <a href="{url}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary w-full py-1.5 text-xs text-blue-400 hover:text-blue-300">{btn_label}</a>
-    </div>"""
-
-def render_dashboard_html(ctx: dict) -> str:
-    safe_brand = html.escape(ctx["brand_name"])
-    safe_notice = html.escape(ctx["custom_notice"]) if ctx.get("custom_notice") else "قبل از اتصال، یک‌بار دکمه Update Subscription را داخل نرم‌افزار خود بزنید."
-    
-    online_indicator = (
-        '<div class="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold">'
-        '<span class="w-2 h-2 rounded-full bg-emerald-400"></span>آنلاین و در حال استفاده</div>'
-        if ctx.get("is_online") else
-        f'<div class="text-xs text-slate-400">آخرین اتصال: <span class="text-slate-200 font-semibold">{ctx.get("last_seen_text", "نامشخص")}</span></div>'
-    )
-
-    if ctx["is_blocked"]:
-        main_section = """
-        <div class="surface-box p-8 text-center border-rose-500/25 my-8">
-            <div class="inline-block px-3 py-1 rounded-full text-xs font-bold text-rose-400 bg-rose-500/10 border border-rose-500/25 mb-3">مسدود شده</div>
-            <div class="text-xl font-bold text-slate-100 mb-1">دسترسی این سرویس غیرفعال است</div>
-            <p class="text-xs text-slate-400">جهت تمدید یا رفع انسداد با بخش پشتیبانی تماس بگیرید.</p>
-        </div>"""
-    else:
-        conf_items = ""
-        for idx, c in enumerate(ctx["configs"]):
-            conf_items += f"""
-            <div class="config-item surface-card p-3 flex items-center justify-between gap-3" data-confname="{c['name'].lower()} {c['proto'].lower()}">
-                <div class="flex items-center gap-2.5 min-w-0">
-                    <span class="mono-num text-[11px] font-bold px-2 py-0.5 rounded bg-white/[0.05] border border-white/[0.08] text-slate-300 uppercase">{c['proto']}</span>
-                    <span dir="ltr" class="text-xs sm:text-sm font-semibold truncate text-slate-200">{c['name']}</span>
-                </div>
-                <div class="flex items-center gap-1.5 shrink-0">
-                    <button type="button" onclick="copyConfig({idx}, this)" class="btn btn-secondary px-2.5 py-1 text-xs" title="کپی کانفیگ">کپی</button>
-                    <button type="button" onclick="showConfigQR({idx})" class="btn btn-secondary p-1.5 text-slate-400" title="کد QR">
-                        <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-                    </button>
-                </div>
-            </div>"""
-
-        encoded_sub_url = urllib.parse.quote(ctx["sub_url"], safe="")
-        hiddify_deep = f"hiddify://import/{ctx['sub_url']}#{urllib.parse.quote(ctx['brand_name'])}"
-        v2rayng_deep = f"v2rayng://install-sub?url={encoded_sub_url}&name={urllib.parse.quote(ctx['brand_name'])}"
-        singbox_deep = f"sing-box://import-remote-profile?url={encoded_sub_url}#{urllib.parse.quote(ctx['brand_name'])}"
-        streisand_deep = f"streisand://import/{ctx['sub_url']}"
-
-        android_apps = "".join([
-            render_app_card("<span class='mono-num'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "گیت‌هاب", True),
-            render_app_card("<span class='mono-num'>v2rayNG</span>", "https://github.com/2dust/v2rayNG/releases", "گیت‌هاب", True),
-            render_app_card("<span class='mono-num'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "گیت‌هاب", False),
-            render_app_card("<span class='mono-num'>Sing-box</span>", "https://github.com/SagerNet/sing-box/releases", "گیت‌هاب", False),
-        ])
-        ios_apps = "".join([
-            render_app_card("<span class='mono-num'>Hiddify</span>", "https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532", "اپ‌استور", True),
-            render_app_card("<span class='mono-num'>Streisand</span>", "https://apps.apple.com/us/app/streisand/id6450534064", "اپ‌استور", True),
-            render_app_card("<span class='mono-num'>Shadowrocket</span>", "https://apps.apple.com/us/app/shadowrocket/id932747118", "اپ‌استور", True),
-            render_app_card("<span class='mono-num'>Sing-box</span>", "https://apps.apple.com/us/app/sing-box/id6451272673", "اپ‌استور", False),
-        ])
-        win_apps = "".join([
-            render_app_card("<span class='mono-num'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "گیت‌هاب", True),
-            render_app_card("<span class='mono-num'>v2rayN</span>", "https://github.com/2dust/v2rayN/releases", "گیت‌هاب", True),
-            render_app_card("<span class='mono-num'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "گیت‌هاب", False),
-            render_app_card("<span class='mono-num'>Clash Verge</span>", "https://github.com/clash-verge-rev/clash-verge-rev/releases", "گیت‌هاب", False),
-        ])
-        mac_apps = "".join([
-            render_app_card("<span class='mono-num'>Hiddify</span>", "https://github.com/hiddify/hiddify-next/releases", "گیت‌هاب", True),
-            render_app_card("<span class='mono-num'>Clash Verge</span>", "https://github.com/clash-verge-rev/clash-verge-rev/releases", "گیت‌هاب", True),
-            render_app_card("<span class='mono-num'>Flclash</span>", "https://github.com/chen08209/FlClash/releases", "گیت‌هاب", False),
-            render_app_card("<span class='mono-num'>Sing-box</span>", "https://github.com/SagerNet/sing-box/releases", "گیت‌هاب", False),
-        ])
-
-        main_section = f"""
-        <!-- اطلاعیه اشتراک -->
-        <div class="surface-box p-4 border-blue-500/20 bg-blue-500/[0.04] mb-6">
-            <div class="flex items-start gap-3">
-                <div class="text-blue-400 mt-0.5">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                </div>
-                <div class="text-xs text-slate-300 leading-relaxed font-medium">{safe_notice}</div>
-            </div>
-        </div>
-
-        <!-- خلاصه وضعیت و گیج مصرف -->
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-            <div class="md:col-span-2 surface-box p-6 flex flex-col justify-between">
-                <div class="flex items-center justify-between mb-6 pb-4 border-b border-white/[0.06]">
-                    <div class="flex items-center gap-3">
-                        <span class="text-xs font-bold px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/25">اشتراک فعال</span>
-                        {online_indicator}
-                    </div>
-                    <div class="text-xs text-slate-400">اعتبار: <span class="mono-num font-bold text-slate-100">{ctx['days_left']}</span> روز</div>
-                </div>
-
-                <div class="flex flex-col sm:flex-row items-center gap-6">
-                    <!-- گیج دقیق وکتور بدون بلور -->
-                    <div class="relative w-28 h-28 shrink-0">
-                        <svg class="transform -rotate-90 w-full h-full" viewBox="0 0 120 120">
-                            <circle cx="60" cy="60" r="50" stroke="rgba(255,255,255,0.06)" stroke-width="8" fill="none"></circle>
-                            <circle cx="60" cy="60" r="50" stroke="#3b82f6" stroke-width="8" fill="none"
-                                stroke-dasharray="314.15" stroke-dashoffset="{314.15 - (314.15 * ctx['percent'] / 100)}"
-                                stroke-linecap="round" class="transition-all duration-700"></circle>
-                        </svg>
-                        <div class="absolute inset-0 flex flex-col items-center justify-center">
-                            <span class="text-lg font-bold mono-num text-slate-100">{ctx['percent']}%</span>
-                            <span class="text-[10px] text-slate-400">مصرف</span>
-                        </div>
-                    </div>
-
-                    <div class="flex-1 w-full space-y-2.5">
-                        <div class="flex justify-between items-center text-xs p-2 rounded-lg bg-white/[0.02]">
-                            <span class="text-slate-400">کل سهمیه</span>
-                            <span class="mono-num font-bold text-slate-200">{ctx['total_quota']}</span>
-                        </div>
-                        <div class="flex justify-between items-center text-xs p-2 rounded-lg bg-white/[0.02]">
-                            <span class="text-slate-400">ترافیک مصرفی</span>
-                            <span class="mono-num font-bold text-amber-400">{ctx['used_traffic']}</span>
-                        </div>
-                        <div class="flex justify-between items-center text-xs p-2 rounded-lg bg-emerald-500/[0.06] border border-emerald-500/20">
-                            <span class="text-emerald-400 font-semibold">باقی‌مانده</span>
-                            <span class="mono-num font-bold text-emerald-400">{ctx['remaining_traffic']}</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="surface-box p-6 flex flex-col justify-between space-y-4">
-                <div>
-                    <div class="text-xs text-slate-400 mb-1">سرورهای در دسترس</div>
-                    <div class="text-xl font-bold mono-num text-blue-400">{len(ctx['configs'])} سرور</div>
-                </div>
-                <div class="border-t border-white/[0.06] pt-4">
-                    <div class="text-xs text-slate-400 mb-1">انقضای زمانی</div>
-                    <div class="text-xs font-semibold mono-num text-slate-200">{ctx['expire_date']}</div>
-                </div>
-                <div class="border-t border-white/[0.06] pt-4">
-                    <div class="text-xs text-slate-400 mb-1">بروزرسانی داده‌ها</div>
-                    <div class="text-xs mono-num text-slate-400">{ctx['now_jalali']}</div>
-                </div>
-            </div>
-        </div>
-
-        <!-- لینک اختصاصی هوشمند -->
-        <div class="surface-box p-4 mb-6">
-            <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
-                <div class="min-w-0 w-full sm:w-auto">
-                    <div class="text-xs font-bold text-slate-300 mb-1">لینک اختصاصی اشتراک (Smart Sub)</div>
-                    <div class="text-xs mono-num text-slate-500 truncate">{ctx['sub_url']}</div>
-                </div>
-                <div class="flex items-center gap-2 w-full sm:w-auto justify-end">
-                    <button type="button" onclick="copySubUrl(this)" class="btn btn-primary px-4 py-2 text-xs flex-1 sm:flex-initial">کپی آدرس ساب</button>
-                    <button type="button" onclick="showSubQR()" class="btn btn-secondary px-3 py-2 text-xs" title="QR Code">QR</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- اتصال مستقیم نرم‌افزار -->
-        <div class="surface-box p-4 mb-6">
-            <div class="text-xs font-bold text-slate-300 mb-3">ایمپورت تک‌کلیک به نرم‌افزار</div>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <a href="{hiddify_deep}" class="btn btn-secondary py-2 text-xs">Hiddify</a>
-                <a href="{v2rayng_deep}" class="btn btn-secondary py-2 text-xs">v2rayNG</a>
-                <a href="{singbox_deep}" class="btn btn-secondary py-2 text-xs">Sing-box</a>
-                <a href="{streisand_deep}" class="btn btn-secondary py-2 text-xs">Streisand</a>
-            </div>
-        </div>
-
-        <!-- لیست کانفیگ‌ها -->
-        <div class="surface-box p-5 mb-8">
-            <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <h2 class="text-sm font-bold text-slate-200">فهرست کانفیگ‌های فعال</h2>
-                <div class="flex items-center gap-2">
-                    <input type="text" id="confSearch" oninput="filterConfigs()" placeholder="فیلتر سرور..." class="input-field py-1.5 px-3 text-xs w-36 sm:w-48">
-                    <button type="button" onclick="copyAll(this)" class="btn btn-secondary px-3 py-1.5 text-xs">کپی یکجای همه</button>
-                </div>
-            </div>
-            <div class="max-h-96 overflow-y-auto space-y-2 pr-1">{conf_items}</div>
-        </div>
-
-        <!-- تب دانلود نرم‌افزارها -->
-        <div class="mb-10">
-            <div class="text-xs font-bold text-slate-400 mb-3 text-center">دانلود کلاینت‌های استاندارد اتصال</div>
-            <div class="flex justify-center gap-2 mb-4">
-                <button type="button" onclick="switchTab('android')" id="tab-btn-android" class="tab-btn active">اندروید</button>
-                <button type="button" onclick="switchTab('ios')" id="tab-btn-ios" class="tab-btn">آیفون (iOS)</button>
-                <button type="button" onclick="switchTab('windows')" id="tab-btn-windows" class="tab-btn">ویندوز</button>
-                <button type="button" onclick="switchTab('mac_linux')" id="tab-btn-mac_linux" class="tab-btn">مک / لینوکس</button>
-            </div>
-            <div id="tab-android" class="platform-tab-content grid grid-cols-2 sm:grid-cols-4 gap-3">{android_apps}</div>
-            <div id="tab-ios" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-4 gap-3">{ios_apps}</div>
-            <div id="tab-windows" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-4 gap-3">{win_apps}</div>
-            <div id="tab-mac_linux" class="platform-tab-content hidden grid grid-cols-2 sm:grid-cols-4 gap-3">{mac_apps}</div>
-        </div>
-        """
-
-    return f"""<!DOCTYPE html>
-<html lang="fa" dir="rtl" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>اشتراک | {safe_brand}</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
-    <style>{ANIMATED_DESIGN_SYSTEM_CSS}</style>
-</head>
-<body class="min-h-screen flex flex-col justify-between">
-    <main class="container mx-auto px-4 py-8 max-w-4xl flex-1">
-        <header class="flex items-center justify-between mb-8 pb-4 border-b border-white/[0.06]">
-            <div>
-                <h1 class="text-lg sm:text-xl font-bold text-slate-100">سرویس اشتراک اختصاصی</h1>
-                <div class="text-xs text-blue-400 font-bold mono-num mt-0.5">{safe_brand}</div>
-            </div>
-            <button type="button" onclick="location.reload()" class="btn btn-secondary px-3 py-1.5 text-xs text-slate-300">
-                <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
-                بروزرسانی
-            </button>
-        </header>
-
-        {main_section}
-    </main>
-
-    <footer class="border-t border-white/[0.06] py-5 px-4 text-center">
-        <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-xs text-slate-400 hover:text-slate-200 transition-colors">
-            <span>پشتیبانی تلگرام:</span>
-            <span class="mono-num font-bold text-blue-400">@DARK_WIKI20</span>
-        </a>
-    </footer>
-
-    <div id="qrModal" class="fixed inset-0 bg-black/75 backdrop-blur-xs hidden items-center justify-center z-50 p-4" onclick="closeQR()">
-        <div class="surface-box p-6 rounded-2xl max-w-xs w-full flex flex-col items-center text-center" onclick="event.stopPropagation()">
-            <div class="font-bold text-xs text-slate-300 mb-3">اسکن اشتراک</div>
-            <img id="qrImage" src="" alt="QR Code" class="w-48 h-48 rounded-lg bg-white p-2 mb-4">
-            <button type="button" onclick="closeQR()" class="btn btn-secondary w-full py-2 text-xs">بستن</button>
-        </div>
-    </div>
-
-    <div id="toastBox" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2 rounded-lg bg-slate-100 text-slate-900 text-xs font-bold shadow-xl"></div>
-
-    <script>
-        const subUrl = {json.dumps(ctx['sub_url'])};
-        const allConfigs = {ctx['configs_json']};
-
-        function switchTab(platform) {{
-            document.querySelectorAll('.platform-tab-content').forEach(el => el.classList.add('hidden'));
-            document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-            const target = document.getElementById('tab-' + platform);
-            const btn = document.getElementById('tab-btn-' + platform);
-            if (target) target.classList.remove('hidden');
-            if (btn) btn.classList.add('active');
-        }}
-
-        function filterConfigs() {{
-            const q = document.getElementById('confSearch').value.toLowerCase();
-            document.querySelectorAll('.config-item').forEach(el => {{
-                el.style.display = el.getAttribute('data-confname').includes(q) ? '' : 'none';
-            }});
-        }}
-
-        function showToast(msg) {{
-            const box = document.getElementById("toastBox");
-            box.textContent = msg;
-            box.classList.remove("hidden");
-            setTimeout(() => box.classList.add("hidden"), 2000);
-        }}
-
-        function copySubUrl(btn) {{
-            navigator.clipboard.writeText(subUrl);
-            showToast("لینک اشتراک کپی شد");
-        }}
-        function copyConfig(idx, btn) {{
-            navigator.clipboard.writeText(allConfigs[idx]);
-            showToast("کانفیگ سرور کپی شد");
-        }}
-        function copyAll(btn) {{
-            if (allConfigs.length > 0) {{
-                navigator.clipboard.writeText(allConfigs.join("\\n"));
-                showToast("تمام کانفیگ‌ها کپی شدند");
-            }}
-        }}
-
-        function openQRModal(text) {{
-            document.getElementById("qrImage").src = "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=" + encodeURIComponent(text);
-            document.getElementById("qrModal").classList.remove("hidden");
-            document.getElementById("qrModal").classList.add("flex");
-        }}
-        function showSubQR() {{ openQRModal(subUrl); }}
-        function showConfigQR(idx) {{ openQRModal(allConfigs[idx]); }}
-        function closeQR() {{
-            document.getElementById("qrModal").classList.add("hidden");
-            document.getElementById("qrModal").classList.remove("flex");
-        }}
-    </script>
-</body>
-</html>"""
-
-# ----------------- مسیرها (Routes) -----------------
+# ----------------- مسیرهای اصلی (Routes) -----------------
 @app.get("/")
 async def root():
-    # جهت امنیت: مسیر اصلی هیچ اطلاعاتی نشان نمی‌دهد
+    # جهت امنیت: مسیر اصلی بدون توکن خطای 404 برمی‌گرداند
     raise HTTPException(status_code=404, detail="Not Found")
 
 @app.get("/sub/{token}")
@@ -1412,22 +1020,17 @@ async def get_user_sub(token: str):
         }
     )
 
-@app.get("/d/{token}", response_class=HTMLResponse)
-async def user_dashboard(request: Request, token: str):
-    user_agent = request.headers.get("user-agent", "")
-    if is_v2ray_client(user_agent):
-        return await get_user_sub(token)
-
+# اندپوینت JSON اختصاصی برای فرانت‌اند React و Glisse
+@app.get("/api/profile/{token}")
+async def get_profile_api(token: str):
     with get_db() as conn:
         profile = conn.execute("SELECT * FROM profiles WHERE token = ?", (token,)).fetchone()
-
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
     is_blocked = bool(profile["is_blocked"])
     upload = download = total_quota = expire_ts = 0
     configs = []
-    configs_json = "[]"
     is_online = False
     last_seen_text = "نامشخص"
 
@@ -1436,7 +1039,6 @@ async def user_dashboard(request: Request, token: str):
             sub_data = await get_cached_sub_data(token, profile["upstream_url"])
             info = sub_data.get("info", {})
             configs = sub_data.get("configs", [])
-            configs_json = sub_data.get("configs_json", "[]")
             is_online = sub_data.get("is_online", False)
             last_seen_text = sub_data.get("last_seen_text", "نامشخص")
             
@@ -1466,7 +1068,7 @@ async def user_dashboard(request: Request, token: str):
     clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
     sub_url = f"https://{clean_domain}/sub/{token}"
 
-    ctx = {
+    return {
         "brand_name": profile["name"],
         "custom_notice": profile["custom_notice"] or "",
         "is_blocked": is_blocked,
@@ -1480,12 +1082,24 @@ async def user_dashboard(request: Request, token: str):
         "expire_date": expire_jalali,
         "now_jalali": now_jalali_str(),
         "sub_url": sub_url,
-        "configs": configs,
-        "configs_json": configs_json
+        "configs": configs
     }
-    return HTMLResponse(content=render_dashboard_html(ctx))
 
-# ----------------- مسیرهای مخفی و امن ادمین -----------------
+# تحویل داشبورد React (با دکمه‌ها و المان‌های Glisse)
+@app.get("/d/{token}", response_class=HTMLResponse)
+async def user_dashboard(request: Request, token: str):
+    user_agent = request.headers.get("user-agent", "")
+    if is_v2ray_client(user_agent):
+        return await get_user_sub(token)
+
+    # خواندن فایل خروجی کامپایل‌شده Vite
+    if os.path.exists("dist/index.html"):
+        with open("dist/index.html", "r", encoding="utf-8") as f:
+            return HTMLResponse(content=f.read())
+            
+    return HTMLResponse("<h3>داشبورد در حال بارگذاری است. لطفاً صفحه را تازه‌سازی کنید...</h3>")
+
+# ----------------- مسیرهای مخفی ادمین -----------------
 @app.get(f"/{ADMIN_SECRET_PATH}", response_class=HTMLResponse)
 async def admin_panel(request: Request):
     if not is_admin(request):
@@ -1739,7 +1353,7 @@ async def delete_profile(request: Request, token: str):
     sub_cache.pop(token, None)
     return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
-# ----------------- وبهوک تلگرام -----------------
+# ----------------- وب‌هوک ربات تلگرام -----------------
 @app.post("/webhook")
 async def telegram_webhook(req: Request):
     if not BOT_TOKEN:
