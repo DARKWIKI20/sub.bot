@@ -34,7 +34,6 @@ ADMIN_SECRET_PATH = os.getenv("ADMIN_SECRET_PATH", "manage-panel-x92").strip("/"
 SECRET_KEY = hashlib.sha256(f"{ADMIN_PASSWORD}_datacenter_v3_salt".encode()).digest()
 WEBHOOK_SECRET = hashlib.sha256(f"{BOT_TOKEN}_tg_webhook".encode()).hexdigest()[:32] if BOT_TOKEN else ""
 
-# انتخاب مسیر دیتابیس با بررسی دسترسی نوشتن
 def get_safe_db_path():
     if os.path.exists("/data") and os.access("/data", os.W_OK):
         return "/data/datacenter_subs.db"
@@ -131,11 +130,10 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
 
-# مدیریت خطای سراسری
+# مدیریت خطای سراسری جهت جلوگیری از کرش خام
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     err_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
-    print(f"CRITICAL ERROR on {request.url.path}: {err_str}")
     return HTMLResponse(
         content=f"""
         <div style="font-family: sans-serif; padding: 25px; background: #07090e; color: #f43f5e; min-height: 100vh;">
@@ -248,7 +246,7 @@ def safe_parse_timestamp(val) -> float:
                     break
                 except Exception:
                     continue
-    if ts > 1e11:  # میلی‌ثانیه به ثانیه
+    if ts > 1e11:
         ts = ts / 1000.0
     return max(0.0, ts)
 
@@ -568,7 +566,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             display: inline-block;
         }
 
-        /* کارت‌های شیشه‌ای شفاف (Liquid Glass) بدون پس‌زمینه مات تیره */
+        /* کارت‌های شیشه‌ای شفاف (Liquid Glass) */
         .stats-box {
             background: rgba(255, 255, 255, 0.03);
             backdrop-filter: blur(16px);
@@ -578,7 +576,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
         }
 
-        /* اسکرول‌بار شیشه‌ای مات و یکپارچه (Liquid Glass Scrollbar) */
+        /* اسکرول‌بار شیشه‌ای مات و یکپارچه */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -969,7 +967,7 @@ def render_dashboard_html(ctx: dict) -> str:
     ctx_json = json.dumps(ctx, ensure_ascii=False)
     return DASHBOARD_REACT_GLISSE_TEMPLATE.replace("__CTX_DATA__", ctx_json)
 
-# ----------------- قالب اختصاصی پنل ادمین -----------------
+# ----------------- قالب و توابع پنل ادمین (تعریف صریح در سطح ماژول) -----------------
 ADMIN_PANEL_CSS = """
 :root {
     --bg-base: #07090e;
@@ -1286,6 +1284,151 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
     </script>
 </body>
 </html>"""
+
+def render_login_html(admin_path: str, error: str = None) -> str:
+    err_box = f'<div class="p-3 mb-4 rounded-xl text-xs font-semibold text-center border border-rose-500/30 bg-rose-500/15 text-rose-400">{html.escape(error)}</div>' if error else ""
+    return f"""<!DOCTYPE html>
+<html lang="fa" dir="rtl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ورود مدیریت دیتاسنتر</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
+    <style>{ADMIN_PANEL_CSS}</style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+    <div class="glass-container w-full max-w-sm p-6 sm:p-8">
+        <h1 class="text-base font-bold text-center mb-1">احراز هویت سرور</h1>
+        <p class="text-xs text-slate-400 text-center mb-6">کنترل پنل مرکزی دیتاسنتر</p>
+        {err_box}
+        <form action="/{admin_path}/login" method="post" class="space-y-4">
+            <div>
+                <label for="admin_pass" class="block text-xs text-slate-400 mb-1.5 font-medium">رمز عبور امنیتی</label>
+                <input id="admin_pass" type="password" name="password" required autofocus class="glass-input mono-num text-left">
+            </div>
+            <button type="submit" class="btn-glass btn-primary w-full py-2.5">ورود به سیستم</button>
+        </form>
+    </div>
+</body>
+</html>"""
+
+def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -> str:
+    total_count = len(profiles)
+    blocked_count = sum(1 for p in profiles if p["is_blocked"])
+    active_count = total_count - blocked_count
+    total_hits = sum((p["sub_hits"] or 0) for p in profiles)
+    cached_items = len(sub_cache)
+
+    rows = ""
+    for p in profiles:
+        safe_name = html.escape(str(p["name"] or ""))
+        safe_token = html.escape(str(p["token"] or ""))
+        safe_note = html.escape(str(p["admin_note"] or ""))
+        safe_notice = html.escape(str(p["custom_notice"] or ""))
+        hits = p["sub_hits"] or 0
+        last_fetch = html.escape(str(p["last_sub_fetch"] or "بدون اتصال"))
+        fake_val = p["fake_total_gb"] or 0
+
+        cached_data = sub_cache.get(p["token"])
+        if cached_data and cached_data.get("info"):
+            info = cached_data["info"]
+            u, d, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_val)
+            traffic_badge = f"<span class='text-xs mono-num text-slate-200'>{format_bytes(u+d)} / {format_bytes(tot)}</span>"
+            
+            if cached_data.get("is_online"):
+                online_badge = '<span class="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>متصل</span>'
+            else:
+                last_s = cached_data.get("last_seen_text", "نامشخص")
+                online_badge = f'<span class="text-xs text-slate-400">{last_s}</span>'
+        else:
+            traffic_badge = "<span class='text-xs text-slate-500'>—</span>"
+            online_badge = "<span class='text-xs text-slate-500'>—</span>"
+
+        status_badge = (
+            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-400">مسدود</span>'
+            if p["is_blocked"] else
+            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">فعال</span>'
+        )
+        fake_label = f"<span class='mono-num text-xs text-blue-400 font-bold'>{fake_val:g} GB</span>" if fake_val > 0 else "<span class='text-slate-500 text-xs'>واقعی</span>"
+        
+        btn_class = "btn-glass text-emerald-400 border-emerald-500/30" if p["is_blocked"] else "btn-glass text-amber-400 border-amber-500/30"
+        btn_text = "فعال‌سازی" if p["is_blocked"] else "مسدود"
+        
+        p_json = html.escape(json.dumps({
+            "token": str(p["token"]),
+            "name": str(p["name"]),
+            "upstream_url": str(p["upstream_url"]),
+            "fake_total_gb": float(fake_val),
+            "custom_notice": str(p["custom_notice"] or ""),
+            "admin_note": str(p["admin_note"] or "")
+        }))
+
+        dash_url = f"https://{domain}/d/{safe_token}"
+        sub_url = f"https://{domain}/sub/{safe_token}"
+        note_html = f'<div class="text-[11px] text-amber-400/80 mt-1 font-mono leading-tight">{safe_note}</div>' if safe_note else ''
+        notice_indicator = '<span class="inline-block mr-1 text-[10px] px-1.5 py-0.2 rounded border border-blue-400/30 bg-blue-500/15 text-blue-300">اعلان</span>' if safe_notice else ''
+
+        rows += f"""
+        <tr class="profile-row border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors" data-name="{safe_name.lower()} {safe_token.lower()} {safe_note.lower()}" data-status="{'blocked' if p['is_blocked'] else 'active'}">
+            <td class="p-3.5 whitespace-nowrap">
+                <div class="font-bold text-sm text-slate-200">{safe_name} {notice_indicator}</div>
+                {note_html}
+            </td>
+            <td class="p-3.5 whitespace-nowrap">
+                <div class="flex items-center gap-1.5">
+                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn-glass px-2.5 py-1 text-xs">داشبورد</button>
+                    <button type="button" onclick="copyText('{sub_url}', 'لینک اشتراک کپی شد')" class="btn-glass px-2.5 py-1 text-xs">ساب</button>
+                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn-glass p-1.5" title="QR Code">
+                        <svg class="w-3.5 h-3.5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    </button>
+                </div>
+            </td>
+            <td class="p-3.5 whitespace-nowrap text-center">{online_badge}</td>
+            <td class="p-3.5 whitespace-nowrap text-center">{fake_label}</td>
+            <td class="p-3.5 whitespace-nowrap text-center">{traffic_badge}</td>
+            <td class="p-3.5 whitespace-nowrap">
+                <div class="text-xs font-semibold mono-num text-slate-300">{hits} بار</div>
+                <div class="text-[11px] text-slate-500 mt-0.5">{last_fetch}</div>
+            </td>
+            <td class="p-3.5 whitespace-nowrap text-center">{status_badge}</td>
+            <td class="p-3.5 whitespace-nowrap text-left">
+                <div class="flex justify-end items-center gap-1.5">
+                    <button type="button" onclick="openEditModal({p_json})" class="btn-glass px-2.5 py-1 text-xs">ویرایش</button>
+                    <form action="/{admin_path}/profiles/{safe_token}/refresh-cache" method="post" class="m-0">
+                        <input type="hidden" name="csrf_token" value="{csrf_token}">
+                        <button type="submit" class="btn-glass p-1.5 text-slate-300" title="تازه‌سازی کش">
+                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+                        </button>
+                    </form>
+                    <form action="/{admin_path}/profiles/{safe_token}/toggle-block" method="post" class="m-0">
+                        <input type="hidden" name="csrf_token" value="{csrf_token}">
+                        <button type="submit" class="btn-glass px-2.5 py-1 text-xs {btn_class}">{btn_text}</button>
+                    </form>
+                    <form action="/{admin_path}/profiles/{safe_token}/delete" method="post" class="m-0" onsubmit="return confirm('تایید حذف نهایی ساب؟');">
+                        <input type="hidden" name="csrf_token" value="{csrf_token}">
+                        <button type="submit" class="btn-glass btn-danger px-2.5 py-1 text-xs">حذف</button>
+                    </form>
+                </div>
+            </td>
+        </tr>"""
+
+    if not rows:
+        rows = '<tr><td colspan="8" class="p-8 text-center text-slate-500 text-xs">هنوز هیچ اشتراکی ساخته نشده است.</td></tr>'
+
+    return (
+        ADMIN_HTML_TEMPLATE
+        .replace("__DOMAIN__", domain)
+        .replace("__ADMIN_PATH__", admin_path)
+        .replace("__CSRF_TOKEN__", csrf_token)
+        .replace("__CACHED_ITEMS__", str(cached_items))
+        .replace("__TOTAL_COUNT__", str(total_count))
+        .replace("__ACTIVE_COUNT__", str(active_count))
+        .replace("__BLOCKED_COUNT__", str(blocked_count))
+        .replace("__TOTAL_HITS__", str(total_hits))
+        .replace("__ROWS__", rows)
+        .replace("__CSS__", ADMIN_PANEL_CSS)
+    )
 
 # ----------------- مسیرهای اصلی سرور (Routes) -----------------
 @app.get("/")
