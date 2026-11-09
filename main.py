@@ -14,6 +14,7 @@ import re
 import traceback
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
+from html.parser import HTMLParser
 import httpx
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import Response, HTMLResponse, RedirectResponse, JSONResponse
@@ -130,7 +131,6 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
 
-# مدیریت خطای سراسری جهت جلوگیری از کرش خام
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     err_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
@@ -286,29 +286,85 @@ def format_timestamp_to_jalali(ts_val) -> str:
     except Exception:
         return "نامحدود"
 
-def parse_user_info(header_val: str, all_headers: dict = None) -> dict:
-    data = {}
-    if header_val:
-        for item in header_val.split(";"):
-            if "=" in item:
-                k, v = item.strip().split("=", 1)
-                k_clean = k.strip().lower()
-                v_clean = v.strip()
-                try:
-                    data[k_clean] = int(float(v_clean))
-                except ValueError:
-                    data[k_clean] = v_clean
+# ----------------- استخراج آخرین زمان اتصال از ساب اصلی -----------------
+def extract_last_online_from_html(html_text: str) -> str:
+    if not html_text:
+        return ""
+    try:
+        class TreeBuilder(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.root = {'tag': 'root', 'attrs': {}, 'children': [], 'text': ''}
+                self.stack = [self.root]
 
-    if all_headers:
-        for possible_key in ("last-online", "x-last-online", "last-use", "online-status", "status"):
-            if possible_key in all_headers and possible_key not in data:
-                val = all_headers[possible_key]
-                try:
-                    data[possible_key] = int(float(val))
-                except ValueError:
-                    data[possible_key] = val
+            def handle_starttag(self, tag, attrs):
+                node = {'tag': tag, 'attrs': dict(attrs), 'children': [], 'text': ''}
+                self.stack[-1]['children'].append(node)
+                self.stack.append(node)
 
-    return data
+            def handle_endtag(self, tag):
+                if len(self.stack) > 1:
+                    self.stack.pop()
+
+            def handle_data(self, data):
+                self.stack[-1]['text'] += data
+
+        parser = TreeBuilder()
+        parser.feed(html_text)
+
+        def find_by_id(node, target_id):
+            if node.get('attrs', {}).get('id') == target_id:
+                return node
+            for child in node.get('children', []):
+                res = find_by_id(child, target_id)
+                if res:
+                    return res
+            return None
+
+        def get_child(node, tag, idx=0):
+            matches = [c for c in node.get('children', []) if c.get('tag') == tag]
+            if 0 <= idx < len(matches):
+                return matches[idx]
+            return None
+
+        root_node = find_by_id(parser.root, 'root')
+        if root_node:
+            curr = root_node
+            path_steps = [
+                ('div', 0), ('main', 0), ('div', 0), ('div', 3),
+                ('div', 0), ('div', 0), ('div', 0),
+                ('div', 0), ('div', 0), ('div', 0), ('div', 0), ('div', 0),
+                ('span', 0)
+            ]
+            for tag, idx in path_steps:
+                if not curr:
+                    break
+                curr = get_child(curr, tag, idx)
+            if curr and curr.get('text', '').strip():
+                clean_txt = re.sub(r'^[🟢⚪🔴\s]+', '', curr['text']).strip()
+                if clean_txt:
+                    return clean_txt
+    except Exception:
+        pass
+
+    patterns = [
+        r'آخرین اتصال[\s\S]{0,250}?<span[^>]*>([^<]+)</span>',
+        r'آخرین اتصال[\s\S]{0,100}?([۰-۹0-9]{4}[/-][۰-۹0-9]{1,2}[/-][۰-۹0-9]{1,2}[،,\s]+[۰-۹0-9]{1,2}:[۰-۹0-9]{1,2})',
+        r'<span[^>]*>[^<]*?([۰-۹0-9]{4}[/-][۰-۹0-9]{1,2}[/-][۰-۹0-9]{1,2}[،,\s]+[۰-۹0-9]{1,2}:[۰-۹0-9]{1,2})[^<]*?</span>',
+        r'"online_at"\s*:\s*"([^"]+)"',
+        r'"(?:last_online|last_use|online_at)"\s*:\s*([0-9]+(?:\.[0-9]+)?)'
+    ]
+    for pat in patterns:
+        m = re.search(pat, html_text)
+        if m:
+            val = m.group(1).strip()
+            clean_val = re.sub(r'^[🟢⚪🔴\s]+', '', val).strip()
+            if clean_val:
+                ts = safe_parse_timestamp(clean_val)
+                if ts > 0:
+                    return format_timestamp_to_jalali(ts)
+                return clean_val
+    return ""
 
 async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
     try:
@@ -342,23 +398,15 @@ async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
                 timeout=5.0
             )
             if res_html.status_code == 200:
-                html_text = res_html.text
-                match_online = re.search(r'"online_at"\s*:\s*"([^"]+)"', html_text)
-                if not match_online:
-                    match_online = re.search(r'"(?:last_online|last_use|online_at)"\s*:\s*([0-9]+(?:\.[0-9]+)?)', html_text)
-                
-                if match_online:
-                    ts = safe_parse_timestamp(match_online.group(1))
-                    if ts > 0:
-                        formatted_dt = format_timestamp_to_jalali(ts)
-                        diff = time.time() - ts
-                        return (0 <= diff <= 180), formatted_dt
+                extracted_date = extract_last_online_from_html(res_html.text)
+                if extracted_date:
+                    ts = safe_parse_timestamp(extracted_date)
+                    is_on = (0 <= (time.time() - ts) <= 180) if ts > 0 else False
+                    return is_on, extracted_date
         except Exception:
             pass
-
     except Exception:
         pass
-
     return False, "نامشخص"
 
 def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
@@ -381,45 +429,24 @@ def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
     except Exception:
         return False, "نامشخص"
 
-def apply_fake_traffic(upload, download, total, fake_total_gb) -> tuple[int, int, int]:
-    try:
-        upload = int(float(upload or 0))
-        download = int(float(download or 0))
-        total = int(float(total or 0))
-        fake_total_gb = float(fake_total_gb or 0.0)
-    except Exception:
-        return 0, 0, 0
-
-    if fake_total_gb <= 0:
-        return upload, download, total
-    fake_total_bytes = int(fake_total_gb * (1024 ** 3))
-    multiplier = (fake_total_bytes / total) if total > 0 else 1.0
-    return int(upload * multiplier), int(download * multiplier), fake_total_bytes
-
-def format_bytes(size_bytes) -> str:
-    try:
-        size_bytes = float(size_bytes or 0)
-    except Exception:
-        size_bytes = 0.0
-    if size_bytes >= 1024 ** 3:
-        return f"{size_bytes / (1024 ** 3):.2f} GB"
-    return f"{size_bytes / (1024 ** 2):.2f} MB"
-
-def fix_b64_padding(s: str) -> str:
-    s = s.strip().replace("\r", "").replace("\n", "").replace(" ", "")
-    return s + "=" * ((4 - len(s) % 4) % 4)
-
-def transform_config_name(original_name: str) -> str:
-    name = original_name.strip()
+# ----------------- آپدیت ریمارک و اعمال حجم فیک -----------------
+def update_config_remark(name: str, fake_total_gb: float) -> str:
+    name = name.strip()
     if not name:
         return "Server"
-    if "VIP" in name.upper() or "𝗩𝗜𝗣" in name:
-        return "VIP"
+    
+    if fake_total_gb and fake_total_gb > 0:
+        fake_str = f"{float(fake_total_gb):.1f} GB"
+        if "🔋" in name:
+            name = re.sub(r'🔋\s*\d+(?:\.\d+)?\s*(?:GB|گیگ)?', f'🔋{fake_str}', name, flags=re.IGNORECASE)
+        elif any(k in name.upper() for k in ("DAY", "𝗗𝗔𝗬", "روز", "حجم", "|")) and re.search(r'\d+(?:\.\d+)?\s*GB', name, flags=re.IGNORECASE):
+            name = re.sub(r'\d+(?:\.\d+)?\s*GB', fake_str, name, count=1, flags=re.IGNORECASE)
+
     if "ویژه" in name:
         name = name.replace("ویژه", "Stable")
     return name
 
-def parse_and_modify_configs(raw_text: str):
+def parse_and_modify_configs(raw_text: str, fake_total_gb: float = 0.0):
     raw_text = raw_text.strip()
     if any(raw_text.startswith(p) for p in ("vless://", "vmess://", "trojan://", "ss://", "hysteria2://", "hy2://", "tuic://")):
         decoded = raw_text
@@ -440,7 +467,7 @@ def parse_and_modify_configs(raw_text: str):
             parts = line.split("#", 1)
             base_part = parts[0]
             orig_remark = urllib.parse.unquote(parts[1]) if len(parts) > 1 else f"Server {idx}"
-            new_name = transform_config_name(orig_remark)
+            new_name = update_config_remark(orig_remark, fake_total_gb)
             new_link = f"{base_part}#{urllib.parse.quote(new_name)}"
             configs.append({"proto": proto.upper(), "name": html.escape(new_name), "link": new_link})
             modified_raw_lines.append(new_link)
@@ -450,7 +477,7 @@ def parse_and_modify_configs(raw_text: str):
                 b64_part = fix_b64_padding(line[8:])
                 conf = json.loads(base64.b64decode(b64_part).decode("utf-8", errors="ignore"))
                 orig_remark = str(conf.get("ps", f"Server {idx}"))
-                new_name = transform_config_name(orig_remark)
+                new_name = update_config_remark(orig_remark, fake_total_gb)
                 conf["ps"] = new_name
                 re_encoded = base64.b64encode(json.dumps(conf).encode("utf-8")).decode("utf-8")
                 new_link = f"vmess://{re_encoded}"
@@ -466,9 +493,52 @@ def parse_and_modify_configs(raw_text: str):
     encoded_sub = base64.b64encode("\n".join(modified_raw_lines).encode("utf-8")).decode("utf-8")
     return configs, encoded_sub
 
-async def get_cached_sub_data(token: str, upstream_url: str):
+def apply_fake_traffic(upload, download, total, fake_total_gb) -> tuple[int, int, int]:
+    try:
+        upload = int(float(upload or 0))
+        download = int(float(download or 0))
+        total = int(float(total or 0))
+        fake_total_gb = float(fake_total_gb or 0.0)
+    except Exception:
+        return 0, 0, 0
+
+    if fake_total_gb <= 0:
+        return upload, download, total
+        
+    fake_total_bytes = int(fake_total_gb * (1024 ** 3))
+    return upload, download, fake_total_bytes
+
+def format_bytes(size_bytes) -> str:
+    try:
+        size_bytes = float(size_bytes or 0)
+    except Exception:
+        size_bytes = 0.0
+    if size_bytes >= 1024 ** 3:
+        return f"{size_bytes / (1024 ** 3):.2f} GB"
+    return f"{size_bytes / (1024 ** 2):.2f} MB"
+
+def fix_b64_padding(s: str) -> str:
+    s = s.strip().replace("\r", "").replace("\n", "").replace(" ", "")
+    return s + "=" * ((4 - len(s) % 4) % 4)
+
+def parse_user_info(header_val: str, all_headers: dict = None) -> dict:
+    data = {}
+    if header_val:
+        for item in header_val.split(";"):
+            if "=" in item:
+                k, v = item.strip().split("=", 1)
+                k_clean = k.strip().lower()
+                v_clean = v.strip()
+                try:
+                    data[k_clean] = int(float(v_clean))
+                except ValueError:
+                    data[k_clean] = v_clean
+    return data
+
+async def get_cached_sub_data(token: str, upstream_url: str, fake_total_gb: float = 0.0):
     now = time.time()
-    cached = sub_cache.get(token)
+    cache_key = f"{token}_{fake_total_gb}"
+    cached = sub_cache.get(cache_key)
     if cached and (now - cached["timestamp"] < CACHE_TTL):
         return cached
 
@@ -499,7 +569,7 @@ async def get_cached_sub_data(token: str, upstream_url: str):
     resp_headers = {k.lower(): v for k, v in res.headers.items()}
     raw_text = res.text.strip()
     
-    configs, encoded_sub = parse_and_modify_configs(raw_text)
+    configs, encoded_sub = parse_and_modify_configs(raw_text, fake_total_gb)
     info = parse_user_info(resp_headers.get("subscription-userinfo", ""), resp_headers)
     
     is_online, last_seen_text = await fetch_upstream_online_status(upstream_url)
@@ -516,7 +586,7 @@ async def get_cached_sub_data(token: str, upstream_url: str):
         "raw_userinfo": resp_headers.get("subscription-userinfo", ""),
         "timestamp": now
     }
-    sub_cache[token] = data
+    sub_cache[cache_key] = data
     return data
 
 def is_v2ray_client(user_agent: str) -> bool:
@@ -527,22 +597,19 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- قالب اختصاصی داشبورد کاربران (GLISSE ENGINE) -----------------
-DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
+# ----------------- قالب اختصاصی داشبورد کاربران (UNSLOP & UI/UX PRO MAX) -----------------
+DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>داشبورد اشتراک هوشمند</title>
+    <title>داشبورد اشتراک | __BRAND_NAME__</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
     
-    <!-- CSS رسمی کتابخانه Glisse -->
-    <link rel="stylesheet" href="https://esm.sh/glisse@0.5.0/dist/styles.css">
-    
     <style>
         :root {
-            --bg-base: #080a10;
+            --bg-base: #08090d;
         }
         * { box-sizing: border-box; }
         body {
@@ -551,9 +618,10 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             color: #f8fafc;
             min-height: 100vh;
             background-image: 
-                radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.12) 0%, transparent 45%),
-                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.08) 0%, transparent 45%);
+                radial-gradient(circle at 10% 15%, rgba(59, 130, 246, 0.08) 0%, transparent 40%),
+                radial-gradient(circle at 90% 85%, rgba(16, 185, 129, 0.06) 0%, transparent 40%);
             background-attachment: fixed;
+            -webkit-font-smoothing: antialiased;
         }
         .mono-num {
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
@@ -566,408 +634,396 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             display: inline-block;
         }
 
-        /* کارت‌های شیشه‌ای شفاف (Liquid Glass) */
-        .stats-box {
+        /* کارت‌های شیشه‌ای مایع (Liquid Glass) */
+        .glass-card {
             background: rgba(255, 255, 255, 0.03);
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.07);
             border-radius: 1.25rem;
-            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
         }
 
-        /* اسکرول‌بار شیشه‌ای مات و یکپارچه */
+        /* دکمه‌های مینیمال استاندارد */
+        .ui-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.55rem 1rem;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            border-radius: 0.75rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #ffffff;
+            cursor: pointer;
+            user-select: none;
+            transition: all 0.15s ease;
+        }
+        .ui-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.22);
+        }
+        .ui-btn:active {
+            transform: scale(0.98);
+        }
+        .ui-btn-primary {
+            background: #2563eb;
+            border-color: #3b82f6;
+        }
+        .ui-btn-primary:hover {
+            background: #1d4ed8;
+            border-color: #60a5fa;
+        }
+
+        /* اسکرول‌بار شیشه‌ای مات و فوق‌باریک */
         ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
+            width: 5px;
+            height: 5px;
         }
         ::-webkit-scrollbar-track {
             background: transparent;
         }
         ::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.16);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            background: rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
             border-radius: 9999px;
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.35);
+            border: 1px solid rgba(255, 255, 255, 0.08);
         }
         ::-webkit-scrollbar-thumb:hover {
-            background: rgba(255, 255, 255, 0.28);
-            border-color: rgba(255, 255, 255, 0.25);
+            background: rgba(255, 255, 255, 0.25);
         }
         * {
             scrollbar-width: thin;
-            scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+            scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
+        }
+
+        .tab-btn {
+            padding: 0.5rem 1.1rem;
+            border-radius: 0.75rem;
+            font-size: 0.8125rem;
+            font-weight: 600;
+            color: #94a3b8;
+            background: transparent;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: all 0.15s ease;
+        }
+        .tab-btn.active {
+            color: #ffffff;
+            background: rgba(255, 255, 255, 0.08);
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+        .tab-btn:hover:not(.active) {
+            color: #e2e8f0;
         }
     </style>
-
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
-<body>
-    <div id="root" data-glisse-backdrop></div>
+<body class="min-h-screen p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto space-y-6">
+    <main class="space-y-6">
+        
+        <!-- ۱. هدر مینیمال بدون سنسور اتصال -->
+        <header class="p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex justify-between items-center shadow-lg">
+            <div>
+                <h1 class="text-lg sm:text-xl font-extrabold tracking-wide">__BRAND_NAME__</h1>
+                <div class="text-xs text-blue-400 font-mono mt-0.5">High Speed Dedicated Cloud</div>
+            </div>
+            <button type="button" onclick="location.reload()" class="ui-btn gap-2" title="تازه‌سازی داده‌ها">
+                <svg class="w-3.5 h-3.5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+                <span>تازه‌سازی</span>
+            </button>
+        </header>
 
-    <script type="text/babel" data-type="module">
-        import React, { useState, useMemo } from 'https://esm.sh/react@18.3.1';
-        import ReactDOM from 'https://esm.sh/react-dom@18.3.1/client';
-        import { Button, TabBar, SegmentedControl, Menu, Input } from 'https://esm.sh/glisse@0.5.0?deps=react@18.3.1,react-dom@18.3.1';
-
-        const DATA = __CTX_DATA__;
-
-        function App() {
-            const [filter, setFilter] = useState("all");
-            const [tab, setTab] = useState("android");
-            const [search, setSearch] = useState("");
-            const [toast, setToast] = useState("");
-            const [qrUrl, setQrUrl] = useState(null);
-
-            const showToast = (msg) => {
-                setToast(msg);
-                setTimeout(() => setToast(""), 2200);
-            };
-
-            const copyText = (txt, msg) => {
-                navigator.clipboard.writeText(txt);
-                showToast(msg);
-            };
-
-            const filteredConfigs = useMemo(() => {
-                return (DATA.configs || []).filter(c => {
-                    const matchProto = (filter === "all") || (c.proto.toLowerCase() === filter.toLowerCase());
-                    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase());
-                    return matchProto && matchSearch;
-                });
-            }, [filter, search]);
-
-            return (
-                <div className="min-h-screen p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto space-y-6">
-                    <main className="space-y-6">
-                        
-                        {/* ۱. هدر شیشه‌ای بدون سنسور اتصال و با دکمه تازه‌سازی */}
-                        <header className="p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex justify-between items-center shadow-lg">
-                            <div>
-                                <h1 className="text-lg sm:text-xl font-extrabold tracking-wide">{DATA.brand_name}</h1>
-                                <div className="text-xs text-blue-400 font-mono mt-0.5">Liquid Glass Dashboard</div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Button variant="glass" onClick={() => location.reload()} title="بروزرسانی داده‌ها">
-                                    تازه‌سازی
-                                </Button>
-                                <Menu
-                                    aria-label="Options"
-                                    items={[
-                                        { label: "کپی آدرس ساب", onSelect: () => copyText(DATA.sub_url, "لینک ساب کپی شد") },
-                                        { label: "کپی تمام سرورها", onSelect: () => copyText((DATA.configs || []).map(c=>c.link).join("\\n"), "تمام کانفیگ‌ها کپی شدند") },
-                                        { label: "کد QR اشتراک", onSelect: () => setQrUrl(DATA.sub_url) },
-                                        "separator",
-                                        { label: "پشتیبانی تلگرام", onSelect: () => window.open("https://t.me/DARK_WIKI20") }
-                                    ]}
-                                />
-                            </div>
-                        </header>
-
-                        {/* ۲. کارت‌های اصلی با پس‌زمینه شیشه‌ای شفاف (Liquid Glass) و اصلاح فونت تاریخ انقضا */}
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-                            
-                            {/* کارت بزرگ وضعیت، روزشمار، گیج و تفکیک حجم‌ها */}
-                            <div className="lg:col-span-2 stats-box p-6 flex flex-col justify-between">
-                                <div className="flex justify-between items-start mb-6">
-                                    <div className="text-left">
-                                        <div className="text-xs text-slate-400 mb-1">منقضی می‌شود در</div>
-                                        <div className="text-2xl font-black mono-num text-slate-100">{DATA.days_left} روز</div>
-                                    </div>
-                                    <div>
-                                        {DATA.is_blocked ? (
-                                            <div className="text-2xl font-bold text-rose-500 flex items-center gap-2">
-                                                مسدود <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
-                                            </div>
-                                        ) : (
-                                            <div className="text-2xl font-bold text-emerald-400 flex items-center gap-2">
-                                                فعال <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]"></span>
-                                            </div>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="flex items-center justify-between gap-6">
-                                    <div className="space-y-3 flex-1">
-                                        <div className="flex justify-between items-center text-sm">
-                                            <span className="mono-num font-bold text-slate-100 text-base">{DATA.total_quota}</span>
-                                            <span className="text-slate-400 text-xs">حجم سرویس</span>
-                                        </div>
-                                        <div className="flex justify-between items-center text-sm">
-                                            <span className="mono-num font-bold text-slate-100 text-base">{DATA.used_traffic}</span>
-                                            <span className="text-slate-400 text-xs">حجم مصرفی</span>
-                                        </div>
-                                        <div className="flex justify-between items-center text-sm">
-                                            <span className="mono-num font-bold text-emerald-400 text-base">{DATA.remaining_traffic}</span>
-                                            <span className="text-slate-400 text-xs">حجم باقی مانده</span>
-                                        </div>
-                                    </div>
-
-                                    {/* گیج دایره‌ای */}
-                                    <div className="relative w-32 h-32 shrink-0 flex items-center justify-center">
-                                        <svg className="transform -rotate-90 w-full h-full" viewBox="0 0 120 120">
-                                            <circle cx="60" cy="60" r="48" stroke="rgba(255,255,255,0.06)" strokeWidth="9" fill="none"></circle>
-                                            <circle cx="60" cy="60" r="48" stroke="#10b981" strokeWidth="9" fill="none"
-                                                strokeDasharray="301.59" strokeDashoffset={301.59 - (301.59 * DATA.percent / 100)}
-                                                strokeLinecap="round" className="transition-all duration-700"></circle>
-                                        </svg>
-                                        <div className="absolute inset-0 flex flex-col items-center justify-center">
-                                            <span className="text-2xl font-black mono-num text-slate-100">{DATA.percent}%</span>
-                                            <span className="text-[11px] text-slate-400 font-medium mt-0.5">مصرف شده</span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            {/* ۳ کارت عمودی ستون کناری (با فونت یکسان وزیرمتن برای تاریخ انقضا و پس‌زمینه شفاف) */}
-                            <div className="flex flex-col gap-4">
-                                <div className="stats-box p-4 flex flex-col justify-between flex-1">
-                                    <div className="text-xs text-slate-400 text-right">حجم کل</div>
-                                    <div className="text-2xl font-bold mono-num text-slate-100 text-left mt-2">{DATA.total_quota}</div>
-                                </div>
-                                <div className="stats-box p-4 flex flex-col justify-between flex-1">
-                                    <div className="text-xs text-slate-400 text-right">تاریخ انقضا</div>
-                                    <div className="text-base font-bold vazir-num text-slate-100 text-right mt-2">{DATA.expire_date}</div>
-                                </div>
-                                <div className="stats-box p-4 flex flex-col justify-between flex-1">
-                                    <div className="text-xs text-slate-400 text-right">آخرین اتصال</div>
-                                    <div className="text-sm font-bold vazir-num text-slate-100 text-right mt-2 flex items-center justify-start gap-1.5" dir="rtl">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-[0_0_6px_rgba(52,211,153,0.6)]"></span>
-                                        <span>{DATA.last_seen_text || DATA.now_jalali}</span>
-                                    </div>
-                                </div>
-                            </div>
-
-                        </div>
-
-                        {/* ۳. نوار شکیل و شفاف کپی ساب */}
-                        <div className="stats-box p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4">
-                            <div className="flex items-center gap-3 w-full md:w-auto min-w-0">
-                                <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 flex items-center justify-center text-blue-400 shrink-0">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                    <div className="text-xs text-slate-400 font-medium mb-1">لینک اختصاصی اشتراک هوشمند:</div>
-                                    <div className="mono-num text-xs text-slate-200 bg-white/[0.04] px-3 py-1.5 rounded-lg border border-white/5 truncate select-all">
-                                        {DATA.sub_url}
-                                    </div>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2.5 w-full md:w-auto shrink-0 justify-end">
-                                <Button variant="filled" onClick={() => copyText(DATA.sub_url, "لینک اشتراک کپی شد")}>
-                                    کپی لینک ساب
-                                </Button>
-                                <Button variant="glass" onClick={() => setQrUrl(DATA.sub_url)}>
-                                    اسکن QR
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* ۴. فیلتر و جستجو با Glisse */}
-                        <div className="space-y-3">
-                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
-                                <div dir="ltr" className="w-full sm:w-auto">
-                                    <SegmentedControl
-                                        aria-label="Protocol Range"
-                                        items={[
-                                            { value: "all", label: "همه" },
-                                            { value: "vless", label: "VLESS" },
-                                            { value: "vmess", label: "VMESS" },
-                                            { value: "trojan", label: "Trojan" }
-                                        ]}
-                                        value={filter}
-                                        onValueChange={setFilter}
-                                    />
-                                </div>
-                                <div className="w-full sm:w-64" dir="rtl">
-                                    <Input
-                                        type="search"
-                                        aria-label="Search"
-                                        placeholder="جستجوی سرور..."
-                                        value={search}
-                                        onValueChange={setSearch}
-                                    />
-                                </div>
-                            </div>
-
-                            {/* لیست کانفیگ‌ها */}
-                            <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
-                                {filteredConfigs.length === 0 ? (
-                                    <div className="p-6 text-center text-xs text-slate-500 rounded-2xl border border-white/5 bg-white/[0.01]">
-                                        سروری با این مشخصات یافت نشد.
-                                    </div>
-                                ) : (
-                                    filteredConfigs.map((c, idx) => (
-                                        <div key={idx} className="p-3 rounded-xl border border-white/10 bg-white/[0.02] hover:border-white/20 transition-colors flex items-center justify-between gap-3">
-                                            <div className="flex items-center gap-2.5 min-w-0">
-                                                <span className="mono-num text-[11px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30 uppercase shrink-0">
-                                                    {c.proto}
-                                                </span>
-                                                <span className="text-xs sm:text-sm font-medium truncate text-slate-200" dir="auto">
-                                                    {c.name}
-                                                </span>
-                                            </div>
-                                            <div className="flex items-center gap-1.5 shrink-0">
-                                                <Button variant="glass" onClick={() => copyText(c.link, "کانفیگ کپی شد")}>
-                                                    کپی
-                                                </Button>
-                                                <Button variant="tinted" onClick={() => setQrUrl(c.link)}>
-                                                    QR
-                                                </Button>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                            </div>
-                        </div>
-
-                        {/* ۵. تب‌بار کلاینت‌ها (تفکیک مک و لینوکس با ۴ برنامه برای هر کدام) */}
-                        <div className="pt-2 space-y-3">
-                            <div className="text-xs text-slate-400 text-center font-semibold">دانلود نرم‌افزار اتصال مخصوص سیستم شما</div>
-                            <div dir="ltr" className="flex justify-center w-full overflow-x-auto py-1">
-                                <TabBar
-                                    aria-label="Platforms"
-                                    items={[
-                                        { value: "android", label: "Android" },
-                                        { value: "ios", label: "iOS" },
-                                        { value: "windows", label: "Windows" },
-                                        { value: "mac", label: "macOS" },
-                                        { value: "linux", label: "Linux" }
-                                    ]}
-                                    value={tab}
-                                    onValueChange={setTab}
-                                    style={{ "--lg-lens-grow-x": "12px", "--lg-lens-grow-y": "8px" }}
-                                />
-                            </div>
-                            
-                            {/* ۴ برنامه برای هر سیستم‌عامل */}
-                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
-                                {tab === "android" && (
-                                    <>
-                                        <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
-                                            Hiddify
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/2dust/v2rayNG/releases")}>
-                                            v2rayNG
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/chen08209/FlClash/releases")}>
-                                            Flclash
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/SagerNet/sing-box/releases")}>
-                                            Sing-box
-                                        </Button>
-                                    </>
-                                )}
-                                {tab === "ios" && (
-                                    <>
-                                        <Button variant="tinted filled" onClick={() => window.open("https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532")}>
-                                            Hiddify
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://apps.apple.com/us/app/streisand/id6450534064")}>
-                                            Streisand
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://apps.apple.com/us/app/shadowrocket/id932747118")}>
-                                            Shadowrocket
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://apps.apple.com/us/app/sing-box/id6451272673")}>
-                                            Sing-box
-                                        </Button>
-                                    </>
-                                )}
-                                {tab === "windows" && (
-                                    <>
-                                        <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
-                                            Hiddify
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/2dust/v2rayN/releases")}>
-                                            v2rayN
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/chen08209/FlClash/releases")}>
-                                            Flclash
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/clash-verge-rev/clash-verge-rev/releases")}>
-                                            Clash Verge
-                                        </Button>
-                                    </>
-                                )}
-                                {tab === "mac" && (
-                                    <>
-                                        <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
-                                            Hiddify
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/clash-verge-rev/clash-verge-rev/releases")}>
-                                            Clash Verge
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/chen08209/FlClash/releases")}>
-                                            Flclash
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/SagerNet/sing-box/releases")}>
-                                            Sing-box
-                                        </Button>
-                                    </>
-                                )}
-                                {tab === "linux" && (
-                                    <>
-                                        <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
-                                            Hiddify
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/clash-verge-rev/clash-verge-rev/releases")}>
-                                            Clash Verge
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/chen08209/FlClash/releases")}>
-                                            Flclash
-                                        </Button>
-                                        <Button variant="glass" onClick={() => window.open("https://github.com/MatsuriDayo/nekoray/releases")}>
-                                            NekoRay
-                                        </Button>
-                                    </>
-                                )}
-                            </div>
-                        </div>
-                    </main>
-
-                    {/* فوتر */}
-                    <footer className="pt-8 pb-4 text-center">
-                        <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
-                            پشتیبانی تلگرام: <span className="mono-num font-bold text-blue-400">@DARK_WIKI20</span>
-                        </a>
-                    </footer>
-
-                    {/* مدال نمایش QR Code */}
-                    {qrUrl && (
-                        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50" onClick={() => setQrUrl(null)}>
-                            <div className="p-6 rounded-3xl border border-white/20 bg-slate-900/90 shadow-2xl flex flex-col items-center max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
-                                <div className="text-xs font-bold mb-4 text-slate-300">کد QR اختصاصی</div>
-                                <img src={"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" + encodeURIComponent(qrUrl)} alt="QR" className="w-52 h-52 rounded-xl bg-white p-2.5 mb-5 shadow-lg" />
-                                <Button variant="glass" onClick={() => setQrUrl(null)} style={{ width: "100%" }}>
-                                    بستن
-                                </Button>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* توست اعلان کپی */}
-                    {toast && (
-                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-white text-slate-900 font-bold text-xs shadow-2xl z-50">
-                            {toast}
-                        </div>
-                    )}
+        <!-- ۲. کارت‌های اصلی دقیقا طبق ساختار تصویر ارسالی با پس‌زمینه شفاف -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            
+            <!-- کارت بزرگ: وضعیت، روزشمار، گیج و تفکیک حجم‌ها -->
+            <div class="lg:col-span-2 glass-card p-6 flex flex-col justify-between">
+                <div class="flex justify-between items-start mb-6">
+                    <div class="text-left">
+                        <div class="text-xs text-slate-400 mb-1">منقضی می‌شود در</div>
+                        <div class="text-2xl font-black mono-num text-slate-100">__DAYS_LEFT__ روز</div>
+                    </div>
+                    <div>
+                        __STATUS_BADGE__
+                    </div>
                 </div>
-            );
+
+                <div class="flex items-center justify-between gap-6">
+                    <div class="space-y-3 flex-1">
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="mono-num font-bold text-slate-100 text-base">__TOTAL_QUOTA__</span>
+                            <span class="text-slate-400 text-xs">حجم سرویس</span>
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="mono-num font-bold text-slate-100 text-base">__USED_TRAFFIC__</span>
+                            <span class="text-slate-400 text-xs">حجم مصرفی</span>
+                        </div>
+                        <div class="flex justify-between items-center text-sm">
+                            <span class="mono-num font-bold text-emerald-400 text-base">__REMAINING_TRAFFIC__</span>
+                            <span class="text-slate-400 text-xs">حجم باقی مانده</span>
+                        </div>
+                    </div>
+
+                    <!-- گیج دایره‌ای استاندارد با درصد اختصاصی حجم فیک -->
+                    <div class="relative w-32 h-32 shrink-0 flex items-center justify-center">
+                        <svg class="transform -rotate-90 w-full h-full" viewBox="0 0 120 120">
+                            <circle cx="60" cy="60" r="48" stroke="rgba(255,255,255,0.06)" stroke-width="9" fill="none"></circle>
+                            <circle cx="60" cy="60" r="48" stroke="#10b981" stroke-width="9" fill="none"
+                                stroke-dasharray="301.59" stroke-dashoffset="__DASHOFFSET__"
+                                stroke-linecap="round" class="transition-all duration-700"></circle>
+                        </svg>
+                        <div class="absolute inset-0 flex flex-col items-center justify-center">
+                            <span class="text-2xl font-black mono-num text-slate-100">__PERCENT__%</span>
+                            <span class="text-[11px] text-slate-400 font-medium mt-0.5">مصرف شده</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ۳ کارت عمودی ستون کناری (فونت فارسی هماهنگ Vazirmatn FD) -->
+            <div class="flex flex-col gap-4">
+                <div class="glass-card p-4 flex flex-col justify-between flex-1">
+                    <div class="text-xs text-slate-400 text-right">حجم کل</div>
+                    <div class="text-2xl font-bold mono-num text-slate-100 text-left mt-2">__TOTAL_QUOTA__</div>
+                </div>
+                <div class="glass-card p-4 flex flex-col justify-between flex-1">
+                    <div class="text-xs text-slate-400 text-right">تاریخ انقضا</div>
+                    <div class="text-base font-bold vazir-num text-slate-100 text-right mt-2">__EXPIRE_DATE__</div>
+                </div>
+                <div class="glass-card p-4 flex flex-col justify-between flex-1">
+                    <div class="text-xs text-slate-400 text-right">آخرین اتصال</div>
+                    <div class="text-sm font-bold vazir-num text-slate-100 text-right mt-2 flex items-center justify-start gap-1.5">
+                        <span class="w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-[0_0_6px_rgba(52,211,153,0.6)]"></span>
+                        <span>__LAST_SEEN_TEXT__</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ۳. نوار شکیل و شفاف کپی ساب -->
+        <div class="glass-card p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4">
+            <div class="flex items-center gap-3 w-full md:w-auto min-w-0">
+                <div class="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 flex items-center justify-center text-blue-400 shrink-0">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                </div>
+                <div class="min-w-0 flex-1">
+                    <div class="text-xs text-slate-400 font-medium mb-1">لینک هوشمند اشتراک:</div>
+                    <div class="mono-num text-xs text-slate-200 bg-black/40 px-3 py-1.5 rounded-lg border border-white/5 truncate select-all">
+                        __SUB_URL__
+                    </div>
+                </div>
+            </div>
+            <div class="flex items-center gap-2.5 w-full md:w-auto shrink-0 justify-end">
+                <button type="button" onclick="copyText('__SUB_URL__', 'لینک اشتراک کپی شد')" class="ui-btn ui-btn-primary">
+                    کپی لینک ساب
+                </button>
+                <button type="button" onclick="openQRModal('__SUB_URL__')" class="ui-btn">
+                    اسکن QR
+                </button>
+            </div>
+        </div>
+
+        <!-- ۴. فیلتر و لیست کانفیگ‌ها -->
+        <div class="space-y-3">
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+                <div class="flex items-center gap-1.5 p-1 rounded-xl bg-white/[0.03] border border-white/10 w-full sm:w-auto">
+                    <button type="button" onclick="filterProtocol('all', this)" class="proto-btn px-3 py-1 text-xs font-semibold rounded-lg bg-blue-600 text-white transition-all">همه</button>
+                    <button type="button" onclick="filterProtocol('VLESS', this)" class="proto-btn px-3 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition-all">VLESS</button>
+                    <button type="button" onclick="filterProtocol('VMESS', this)" class="proto-btn px-3 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition-all">VMESS</button>
+                    <button type="button" onclick="filterProtocol('TROJAN', this)" class="proto-btn px-3 py-1 text-xs font-semibold rounded-lg text-slate-400 hover:text-white transition-all">Trojan</button>
+                </div>
+                <div class="w-full sm:w-64">
+                    <input type="text" id="confSearch" oninput="searchConfigs()" placeholder="جستجوی سرور..." class="w-full bg-white/[0.03] border border-white/10 rounded-xl px-3.5 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500">
+                </div>
+            </div>
+
+            <!-- لیست کانفیگ‌ها -->
+            <div class="max-h-80 overflow-y-auto space-y-2 pr-1" id="configListContainer">
+                __CONFIG_ROWS__
+            </div>
+        </div>
+
+        <!-- ۵. تب‌بار کلاینت‌ها (تفکیک مک و لینوکس با ۴ برنامه مجزا برای هر کدام) -->
+        <div class="pt-2 space-y-3">
+            <div class="text-xs text-slate-400 text-center font-semibold">دانلود نرم‌افزار اتصال مخصوص سیستم شما</div>
+            <div class="flex justify-center flex-wrap gap-1.5 p-1 rounded-xl bg-white/[0.03] border border-white/10 w-fit mx-auto">
+                <button type="button" onclick="switchPlatform('android', this)" class="tab-btn active">Android</button>
+                <button type="button" onclick="switchPlatform('ios', this)" class="tab-btn">iOS</button>
+                <button type="button" onclick="switchPlatform('windows', this)" class="tab-btn">Windows</button>
+                <button type="button" onclick="switchPlatform('mac', this)" class="tab-btn">macOS</button>
+                <button type="button" onclick="switchPlatform('linux', this)" class="tab-btn">Linux</button>
+            </div>
+            
+            <!-- ۴ برنامه برای هر سیستم‌عامل -->
+            <div id="platform-android" class="platform-tab grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                <a href="https://github.com/hiddify/hiddify-next/releases" target="_blank" class="ui-btn ui-btn-primary">Hiddify</a>
+                <a href="https://github.com/2dust/v2rayNG/releases" target="_blank" class="ui-btn">v2rayNG</a>
+                <a href="https://github.com/chen08209/FlClash/releases" target="_blank" class="ui-btn">Flclash</a>
+                <a href="https://github.com/SagerNet/sing-box/releases" target="_blank" class="ui-btn">Sing-box</a>
+            </div>
+            <div id="platform-ios" class="platform-tab hidden grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                <a href="https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532" target="_blank" class="ui-btn ui-btn-primary">Hiddify</a>
+                <a href="https://apps.apple.com/us/app/streisand/id6450534064" target="_blank" class="ui-btn">Streisand</a>
+                <a href="https://apps.apple.com/us/app/shadowrocket/id932747118" target="_blank" class="ui-btn">Shadowrocket</a>
+                <a href="https://apps.apple.com/us/app/sing-box/id6451272673" target="_blank" class="ui-btn">Sing-box</a>
+            </div>
+            <div id="platform-windows" class="platform-tab hidden grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                <a href="https://github.com/hiddify/hiddify-next/releases" target="_blank" class="ui-btn ui-btn-primary">Hiddify</a>
+                <a href="https://github.com/2dust/v2rayN/releases" target="_blank" class="ui-btn">v2rayN</a>
+                <a href="https://github.com/chen08209/FlClash/releases" target="_blank" class="ui-btn">Flclash</a>
+                <a href="https://github.com/clash-verge-rev/clash-verge-rev/releases" target="_blank" class="ui-btn">Clash Verge</a>
+            </div>
+            <div id="platform-mac" class="platform-tab hidden grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                <a href="https://github.com/hiddify/hiddify-next/releases" target="_blank" class="ui-btn ui-btn-primary">Hiddify</a>
+                <a href="https://github.com/clash-verge-rev/clash-verge-rev/releases" target="_blank" class="ui-btn">Clash Verge</a>
+                <a href="https://github.com/chen08209/FlClash/releases" target="_blank" class="ui-btn">Flclash</a>
+                <a href="https://github.com/SagerNet/sing-box/releases" target="_blank" class="ui-btn">Sing-box</a>
+            </div>
+            <div id="platform-linux" class="platform-tab hidden grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
+                <a href="https://github.com/hiddify/hiddify-next/releases" target="_blank" class="ui-btn ui-btn-primary">Hiddify</a>
+                <a href="https://github.com/clash-verge-rev/clash-verge-rev/releases" target="_blank" class="ui-btn">Clash Verge</a>
+                <a href="https://github.com/chen08209/FlClash/releases" target="_blank" class="ui-btn">Flclash</a>
+                <a href="https://github.com/MatsuriDayo/nekoray/releases" target="_blank" class="ui-btn">NekoRay</a>
+            </div>
+        </div>
+    </main>
+
+    <!-- فوتر -->
+    <footer class="pt-8 pb-4 text-center">
+        <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" class="text-xs text-slate-400 hover:text-slate-200 transition-colors">
+            پشتیبانی تلگرام: <span class="mono-num font-bold text-blue-400">@DARK_WIKI20</span>
+        </a>
+    </footer>
+
+    <!-- مدال QR -->
+    <div id="qrModal" class="fixed inset-0 bg-black/80 backdrop-blur-md hidden items-center justify-center p-4 z-50" onclick="closeQRModal()">
+        <div class="p-6 rounded-3xl border border-white/20 bg-slate-900/90 shadow-2xl flex flex-col items-center max-w-xs w-full" onclick="event.stopPropagation()">
+            <div class="text-xs font-bold mb-4 text-slate-300">کد QR اختصاصی</div>
+            <img id="qrModalImg" src="" alt="QR" class="w-52 h-52 rounded-xl bg-white p-2.5 mb-5 shadow-lg">
+            <button type="button" onclick="closeQRModal()" class="ui-btn w-full">بستن</button>
+        </div>
+    </div>
+
+    <!-- توست پیام -->
+    <div id="toastBox" class="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-white text-slate-900 font-bold text-xs shadow-2xl z-50 hidden"></div>
+
+    <script>
+        function copyText(txt, msg) {
+            navigator.clipboard.writeText(txt);
+            const t = document.getElementById('toastBox');
+            t.textContent = msg;
+            t.classList.remove('hidden');
+            setTimeout(() => t.classList.add('hidden'), 2000);
         }
 
-        ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+        function openQRModal(url) {
+            document.getElementById('qrModalImg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=' + encodeURIComponent(url);
+            document.getElementById('qrModal').classList.remove('hidden');
+            document.getElementById('qrModal').classList.add('flex');
+        }
+
+        function closeQRModal() {
+            document.getElementById('qrModal').classList.add('hidden');
+            document.getElementById('qrModal').classList.remove('flex');
+        }
+
+        function filterProtocol(proto, btn) {
+            document.querySelectorAll('.proto-btn').forEach(b => {
+                b.classList.remove('bg-blue-600', 'text-white');
+                b.classList.add('text-slate-400');
+            });
+            btn.classList.add('bg-blue-600', 'text-white');
+            btn.classList.remove('text-slate-400');
+
+            document.querySelectorAll('.config-item').forEach(el => {
+                const matchProto = (proto === 'all') || (el.getAttribute('data-proto') === proto);
+                const q = document.getElementById('confSearch').value.toLowerCase();
+                const matchSearch = el.getAttribute('data-name').includes(q);
+                el.style.display = (matchProto && matchSearch) ? '' : 'none';
+            });
+        }
+
+        function searchConfigs() {
+            const q = document.getElementById('confSearch').value.toLowerCase();
+            const activeProtoBtn = document.querySelector('.proto-btn.bg-blue-600');
+            const proto = activeProtoBtn ? activeProtoBtn.textContent.trim() : 'همه';
+
+            document.querySelectorAll('.config-item').forEach(el => {
+                const matchProto = (proto === 'همه') || (el.getAttribute('data-proto') === proto);
+                const matchSearch = el.getAttribute('data-name').includes(q);
+                el.style.display = (matchProto && matchSearch) ? '' : 'none';
+            });
+        }
+
+        function switchPlatform(p, btn) {
+            document.querySelectorAll('.platform-tab').forEach(el => el.classList.add('hidden'));
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.getElementById('platform-' + p).classList.remove('hidden');
+            btn.classList.add('active');
+        }
     </script>
 </body>
 </html>"""
 
 def render_dashboard_html(ctx: dict) -> str:
-    ctx_json = json.dumps(ctx, ensure_ascii=False)
-    return DASHBOARD_REACT_GLISSE_TEMPLATE.replace("__CTX_DATA__", ctx_json)
+    configs = ctx.get("configs", [])
+    config_rows = ""
+    for c in configs:
+        safe_name = html.escape(c["name"])
+        safe_proto = html.escape(c["proto"])
+        safe_link = html.escape(c["link"])
+        config_rows += f"""
+        <div class="config-item p-3 rounded-xl border border-white/10 bg-white/[0.02] hover:border-white/20 transition-colors flex items-center justify-between gap-3" data-proto="{safe_proto}" data-name="{safe_name.lower()}">
+            <div class="flex items-center gap-2.5 min-w-0">
+                <span class="mono-num text-[11px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30 uppercase shrink-0">
+                    {safe_proto}
+                </span>
+                <span class="text-xs sm:text-sm font-medium truncate text-slate-200" dir="auto">
+                    {safe_name}
+                </span>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+                <button type="button" onclick="copyText('{safe_link}', 'کانفیگ کپی شد')" class="ui-btn">
+                    کپی
+                </button>
+                <button type="button" onclick="openQRModal('{safe_link}')" class="ui-btn">
+                    QR
+                </button>
+            </div>
+        </div>"""
 
-# ----------------- قالب و توابع پنل ادمین (تعریف صریح در سطح ماژول) -----------------
+    if not config_rows:
+        config_rows = '<div class="p-6 text-center text-xs text-slate-500 rounded-2xl border border-white/5 bg-white/[0.01]">سروری ثبت نشده است.</div>'
+
+    percent = ctx["percent"]
+    dashoffset = 301.59 - (301.59 * percent / 100)
+
+    status_badge = (
+        '<div class="text-2xl font-bold text-rose-500 flex items-center gap-2">مسدود <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span></div>'
+        if ctx["is_blocked"] else
+        '<div class="text-2xl font-bold text-emerald-400 flex items-center gap-2">فعال <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]"></span></div>'
+    )
+
+    return (
+        DASHBOARD_HTML_TEMPLATE
+        .replace("__BRAND_NAME__", html.escape(ctx["brand_name"]))
+        .replace("__DAYS_LEFT__", str(ctx["days_left"]))
+        .replace("__STATUS_BADGE__", status_badge)
+        .replace("__TOTAL_QUOTA__", str(ctx["total_quota"]))
+        .replace("__USED_TRAFFIC__", str(ctx["used_traffic"]))
+        .replace("__REMAINING_TRAFFIC__", str(ctx["remaining_traffic"]))
+        .replace("__EXPIRE_DATE__", str(ctx["expire_date"]))
+        .replace("__LAST_SEEN_TEXT__", str(ctx["last_seen_text"] or ctx["now_jalali"]))
+        .replace("__SUB_URL__", str(ctx["sub_url"]))
+        .replace("__PERCENT__", str(percent))
+        .replace("__DASHOFFSET__", str(dashoffset))
+        .replace("__CONFIG_ROWS__", config_rows)
+    )
+
+# ----------------- قالب و توابع پنل ادمین -----------------
 ADMIN_PANEL_CSS = """
 :root {
     --bg-base: #07090e;
@@ -1330,7 +1386,10 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
         last_fetch = html.escape(str(p["last_sub_fetch"] or "بدون اتصال"))
         fake_val = p["fake_total_gb"] or 0
 
-        cached_data = sub_cache.get(p["token"])
+        cached_data = sub_cache.get(f"{p['token']}_{fake_val}")
+        if not cached_data:
+            cached_data = sub_cache.get(p["token"])
+
         if cached_data and cached_data.get("info"):
             info = cached_data["info"]
             u, d, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_val)
@@ -1450,10 +1509,10 @@ async def get_user_sub(token: str):
         )
         conn.commit()
 
+    fake_gb = float(profile["fake_total_gb"] or 0)
     try:
-        sub_data = await get_cached_sub_data(token, profile["upstream_url"])
+        sub_data = await get_cached_sub_data(token, profile["upstream_url"], fake_gb)
         info = sub_data.get("info", {})
-        fake_gb = profile["fake_total_gb"] or 0
         
         if info and fake_gb > 0:
             up, down, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_gb)
@@ -1489,10 +1548,11 @@ async def user_dashboard(request: Request, token: str):
     configs = []
     is_online = False
     last_seen_text = "نامشخص"
+    fake_gb = float(profile["fake_total_gb"] or 0)
 
     if not is_blocked:
         try:
-            sub_data = await get_cached_sub_data(token, profile["upstream_url"])
+            sub_data = await get_cached_sub_data(token, profile["upstream_url"], fake_gb)
             info = sub_data.get("info", {})
             configs = sub_data.get("configs", [])
             is_online = bool(sub_data.get("is_online", False))
@@ -1503,7 +1563,6 @@ async def user_dashboard(request: Request, token: str):
             raw_total = info.get("total", 0)
             expire_ts = safe_parse_timestamp(info.get("expire", 0))
             
-            fake_gb = profile["fake_total_gb"] or 0
             upload, download, total_quota = apply_fake_traffic(raw_up, raw_down, raw_total, fake_gb)
         except Exception:
             is_online = False
@@ -1745,7 +1804,7 @@ async def edit_profile(request: Request, token: str):
             )
             conn.commit()
 
-    sub_cache.pop(token, None)
+    sub_cache.clear()
     return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
 @app.post(f"/{ADMIN_SECRET_PATH}/profiles/{{token}}/refresh-cache")
@@ -1755,12 +1814,15 @@ async def refresh_single_cache(request: Request, token: str):
     form_data = await read_bounded_form(request)
     if not verify_csrf(request, form_data.get("csrf_token", [""])[0]):
         raise HTTPException(status_code=403)
-    sub_cache.pop(token, None)
+    
     with get_db() as conn:
         profile = conn.execute("SELECT * FROM profiles WHERE token = ?", (token,)).fetchone()
     if profile:
+        fake_gb = float(profile["fake_total_gb"] or 0)
+        sub_cache.pop(f"{token}_{fake_gb}", None)
+        sub_cache.pop(token, None)
         try:
-            await get_cached_sub_data(token, profile["upstream_url"])
+            await get_cached_sub_data(token, profile["upstream_url"], fake_gb)
         except Exception:
             pass
     return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
@@ -1777,7 +1839,7 @@ async def toggle_block(request: Request, token: str):
         conn.execute("UPDATE profiles SET is_blocked = CASE WHEN is_blocked = 1 THEN 0 ELSE 1 END WHERE token = ?", (token,))
         conn.commit()
 
-    sub_cache.pop(token, None)
+    sub_cache.clear()
     return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
 @app.post(f"/{ADMIN_SECRET_PATH}/profiles/{{token}}/delete")
@@ -1792,7 +1854,7 @@ async def delete_profile(request: Request, token: str):
         conn.execute("DELETE FROM profiles WHERE token = ?", (token,))
         conn.commit()
 
-    sub_cache.pop(token, None)
+    sub_cache.clear()
     return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
 # ----------------- وب‌هوک ربات تلگرام -----------------
@@ -1828,9 +1890,9 @@ async def telegram_webhook(req: Request):
             caption = "هیچ پروفایلی در سیستم ثبت نشده است."
         else:
             try:
-                sub_data = await get_cached_sub_data(profile["token"], profile["upstream_url"])
+                fake_gb = float(profile["fake_total_gb"] or 0)
+                sub_data = await get_cached_sub_data(profile["token"], profile["upstream_url"], fake_gb)
                 info = sub_data.get("info", {})
-                fake_gb = profile["fake_total_gb"] or 0
                 u, d, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_gb)
                 
                 used_gb = (u + d) / (1024**3)
