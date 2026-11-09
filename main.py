@@ -34,7 +34,7 @@ ADMIN_SECRET_PATH = os.getenv("ADMIN_SECRET_PATH", "manage-panel-x92").strip("/"
 SECRET_KEY = hashlib.sha256(f"{ADMIN_PASSWORD}_datacenter_v3_salt".encode()).digest()
 WEBHOOK_SECRET = hashlib.sha256(f"{BOT_TOKEN}_tg_webhook".encode()).hexdigest()[:32] if BOT_TOKEN else ""
 
-# انتخاب مسیر دیتابیس با بررسی دقیق دسترسی نوشتن
+# انتخاب مسیر دیتابیس با بررسی دسترسی نوشتن
 def get_safe_db_path():
     if os.path.exists("/data") and os.access("/data", os.W_OK):
         return "/data/datacenter_subs.db"
@@ -131,7 +131,7 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
 
-# مدیریت خطای سراسری جهت جلوگیری از خاموشی ۵۰۰
+# مدیریت خطای سراسری
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     err_str = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
@@ -139,9 +139,8 @@ async def global_exception_handler(request: Request, exc: Exception):
     return HTMLResponse(
         content=f"""
         <div style="font-family: sans-serif; padding: 25px; background: #07090e; color: #f43f5e; min-height: 100vh;">
-            <h2 style="margin-top:0;">خطای غیرمنتظره سرور (۵۰۰)</h2>
-            <p style="color: #cbd5e1; font-size: 13px;">سرور هنگام پردازش با این خطا مواجه شد:</p>
-            <pre style="background: #11131a; color: #f87171; padding: 15px; border-radius: 12px; font-size: 12px; overflow-x: auto; border: 1px solid rgba(255,255,255,0.08);">{html.escape(err_str)}</pre>
+            <h2 style="margin-top:0;">خطای سرور (۵۰۰)</h2>
+            <pre style="background: #11131a; color: #f87171; padding: 15px; border-radius: 12px; font-size: 12px; overflow-x: auto;">{html.escape(err_str)}</pre>
         </div>
         """,
         status_code=500
@@ -225,7 +224,7 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- محاسبات تاریخ و ترافیک ایمن -----------------
+# ----------------- محاسبات تاریخ و ترافیک -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
@@ -249,7 +248,7 @@ def safe_parse_timestamp(val) -> float:
                     break
                 except Exception:
                     continue
-    if ts > 1e11:  # تشخیص میلی‌ثانیه بودن تایم‌استمپ
+    if ts > 1e11:  # میلی‌ثانیه به ثانیه
         ts = ts / 1000.0
     return max(0.0, ts)
 
@@ -563,13 +562,23 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             direction: ltr !important;
             display: inline-block;
         }
-        .stats-box {
-            background-color: #111317;
-            border: 1px solid rgba(255, 255, 255, 0.07);
-            border-radius: 1.25rem;
+        .vazir-num {
+            font-family: 'Vazirmatn FD', sans-serif !important;
+            direction: rtl !important;
+            display: inline-block;
         }
 
-        /* اسکرول‌بار شیشه‌ای مایع (Liquid Glass Scrollbar) */
+        /* کارت‌های شیشه‌ای شفاف (Liquid Glass) بدون پس‌زمینه مات تیره */
+        .stats-box {
+            background: rgba(255, 255, 255, 0.03);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 1.25rem;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.35);
+        }
+
+        /* اسکرول‌بار شیشه‌ای مات و یکپارچه (Liquid Glass Scrollbar) */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -636,8 +645,8 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                 <div className="min-h-screen p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto space-y-6">
                     <main className="space-y-6">
                         
-                        {/* ۱. هدر شیشه‌ای با دکمه تازه‌سازی و منوی گزینه‌ها */}
-                        <header className="p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl flex justify-between items-center shadow-lg">
+                        {/* ۱. هدر شیشه‌ای بدون سنسور اتصال و با دکمه تازه‌سازی */}
+                        <header className="p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex justify-between items-center shadow-lg">
                             <div>
                                 <h1 className="text-lg sm:text-xl font-extrabold tracking-wide">{DATA.brand_name}</h1>
                                 <div className="text-xs text-blue-400 font-mono mt-0.5">Liquid Glass Dashboard</div>
@@ -659,11 +668,11 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </header>
 
-                        {/* ۲. کارت‌های اصلی دقیقا طبق ساختار تصویر ارسالی */}
+                        {/* ۲. کارت‌های اصلی با پس‌زمینه شیشه‌ای شفاف (Liquid Glass) و اصلاح فونت تاریخ انقضا */}
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                             
                             {/* کارت بزرگ وضعیت، روزشمار، گیج و تفکیک حجم‌ها */}
-                            <div className="lg:col-span-2 stats-box p-6 flex flex-col justify-between shadow-xl">
+                            <div className="lg:col-span-2 stats-box p-6 flex flex-col justify-between">
                                 <div className="flex justify-between items-start mb-6">
                                     <div className="text-left">
                                         <div className="text-xs text-slate-400 mb-1">منقضی می‌شود در</div>
@@ -698,7 +707,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                         </div>
                                     </div>
 
-                                    {/* گیج دایره‌ای استاندارد */}
+                                    {/* گیج دایره‌ای */}
                                     <div className="relative w-32 h-32 shrink-0 flex items-center justify-center">
                                         <svg className="transform -rotate-90 w-full h-full" viewBox="0 0 120 120">
                                             <circle cx="60" cy="60" r="48" stroke="rgba(255,255,255,0.06)" strokeWidth="9" fill="none"></circle>
@@ -714,7 +723,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 </div>
                             </div>
 
-                            {/* ۳ کارت عمودی ستون کناری */}
+                            {/* ۳ کارت عمودی ستون کناری (با فونت یکسان وزیرمتن برای تاریخ انقضا و پس‌زمینه شفاف) */}
                             <div className="flex flex-col gap-4">
                                 <div className="stats-box p-4 flex flex-col justify-between flex-1">
                                     <div className="text-xs text-slate-400 text-right">حجم کل</div>
@@ -722,11 +731,11 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 </div>
                                 <div className="stats-box p-4 flex flex-col justify-between flex-1">
                                     <div className="text-xs text-slate-400 text-right">تاریخ انقضا</div>
-                                    <div className="text-sm font-bold mono-num text-slate-100 text-left mt-2">{DATA.expire_date}</div>
+                                    <div className="text-base font-bold vazir-num text-slate-100 text-right mt-2">{DATA.expire_date}</div>
                                 </div>
                                 <div className="stats-box p-4 flex flex-col justify-between flex-1">
                                     <div className="text-xs text-slate-400 text-right">آخرین اتصال</div>
-                                    <div className="text-sm font-bold mono-num text-slate-100 text-left mt-2 flex items-center justify-end gap-1.5" dir="ltr">
+                                    <div className="text-sm font-bold vazir-num text-slate-100 text-right mt-2 flex items-center justify-start gap-1.5" dir="rtl">
                                         <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-[0_0_6px_rgba(52,211,153,0.6)]"></span>
                                         <span>{DATA.last_seen_text || DATA.now_jalali}</span>
                                     </div>
@@ -735,15 +744,15 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
 
                         </div>
 
-                        {/* ۳. نوار شکیل و بهینه‌شده کپی ساب */}
-                        <div className="stats-box p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4 border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-lg">
+                        {/* ۳. نوار شکیل و شفاف کپی ساب */}
+                        <div className="stats-box p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4">
                             <div className="flex items-center gap-3 w-full md:w-auto min-w-0">
                                 <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 flex items-center justify-center text-blue-400 shrink-0">
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
                                 </div>
                                 <div className="min-w-0 flex-1">
                                     <div className="text-xs text-slate-400 font-medium mb-1">لینک اختصاصی اشتراک هوشمند:</div>
-                                    <div className="mono-num text-xs text-slate-200 bg-black/50 px-3 py-1.5 rounded-lg border border-white/5 truncate select-all">
+                                    <div className="mono-num text-xs text-slate-200 bg-white/[0.04] px-3 py-1.5 rounded-lg border border-white/5 truncate select-all">
                                         {DATA.sub_url}
                                     </div>
                                 </div>
@@ -816,7 +825,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </div>
 
-                        {/* ۵. تب‌بار کلاینت‌ها */}
+                        {/* ۵. تب‌بار کلاینت‌ها (تفکیک مک و لینوکس با ۴ برنامه برای هر کدام) */}
                         <div className="pt-2 space-y-3">
                             <div className="text-xs text-slate-400 text-center font-semibold">دانلود نرم‌افزار اتصال مخصوص سیستم شما</div>
                             <div dir="ltr" className="flex justify-center w-full overflow-x-auto py-1">
@@ -826,7 +835,8 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                         { value: "android", label: "Android" },
                                         { value: "ios", label: "iOS" },
                                         { value: "windows", label: "Windows" },
-                                        { value: "mac", label: "macOS / Linux" }
+                                        { value: "mac", label: "macOS" },
+                                        { value: "linux", label: "Linux" }
                                     ]}
                                     value={tab}
                                     onValueChange={setTab}
@@ -834,44 +844,85 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 />
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-3 pt-1">
+                            {/* ۴ برنامه برای هر سیستم‌عامل */}
+                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-1">
                                 {tab === "android" && (
                                     <>
                                         <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
-                                            دانلود Hiddify (اندروید)
+                                            Hiddify
                                         </Button>
                                         <Button variant="glass" onClick={() => window.open("https://github.com/2dust/v2rayNG/releases")}>
-                                            دانلود v2rayNG
+                                            v2rayNG
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/chen08209/FlClash/releases")}>
+                                            Flclash
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/SagerNet/sing-box/releases")}>
+                                            Sing-box
                                         </Button>
                                     </>
                                 )}
                                 {tab === "ios" && (
                                     <>
                                         <Button variant="tinted filled" onClick={() => window.open("https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532")}>
-                                            دانلود Hiddify (آیفون)
+                                            Hiddify
                                         </Button>
                                         <Button variant="glass" onClick={() => window.open("https://apps.apple.com/us/app/streisand/id6450534064")}>
-                                            دانلود Streisand
+                                            Streisand
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://apps.apple.com/us/app/shadowrocket/id932747118")}>
+                                            Shadowrocket
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://apps.apple.com/us/app/sing-box/id6451272673")}>
+                                            Sing-box
                                         </Button>
                                     </>
                                 )}
                                 {tab === "windows" && (
                                     <>
                                         <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
-                                            دانلود Hiddify (ویندوز)
+                                            Hiddify
                                         </Button>
                                         <Button variant="glass" onClick={() => window.open("https://github.com/2dust/v2rayN/releases")}>
-                                            دانلود v2rayN
+                                            v2rayN
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/chen08209/FlClash/releases")}>
+                                            Flclash
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/clash-verge-rev/clash-verge-rev/releases")}>
+                                            Clash Verge
                                         </Button>
                                     </>
                                 )}
                                 {tab === "mac" && (
                                     <>
                                         <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
-                                            دانلود Hiddify (مک)
+                                            Hiddify
                                         </Button>
                                         <Button variant="glass" onClick={() => window.open("https://github.com/clash-verge-rev/clash-verge-rev/releases")}>
-                                            دانلود Clash Verge
+                                            Clash Verge
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/chen08209/FlClash/releases")}>
+                                            Flclash
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/SagerNet/sing-box/releases")}>
+                                            Sing-box
+                                        </Button>
+                                    </>
+                                )}
+                                {tab === "linux" && (
+                                    <>
+                                        <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
+                                            Hiddify
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/clash-verge-rev/clash-verge-rev/releases")}>
+                                            Clash Verge
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/chen08209/FlClash/releases")}>
+                                            Flclash
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/MatsuriDayo/nekoray/releases")}>
+                                            NekoRay
                                         </Button>
                                     </>
                                 )}
@@ -1236,151 +1287,6 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>"""
 
-def render_login_html(admin_path: str, error: str = None) -> str:
-    err_box = f'<div class="p-3 mb-4 rounded-xl text-xs font-semibold text-center border border-rose-500/30 bg-rose-500/15 text-rose-400">{html.escape(error)}</div>' if error else ""
-    return f"""<!DOCTYPE html>
-<html lang="fa" dir="rtl" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ورود مدیریت دیتاسنتر</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
-    <style>{ADMIN_PANEL_CSS}</style>
-</head>
-<body class="min-h-screen flex items-center justify-center p-4">
-    <div class="glass-container w-full max-w-sm p-6 sm:p-8">
-        <h1 class="text-base font-bold text-center mb-1">احراز هویت سرور</h1>
-        <p class="text-xs text-slate-400 text-center mb-6">کنترل پنل مرکزی دیتاسنتر</p>
-        {err_box}
-        <form action="/{admin_path}/login" method="post" class="space-y-4">
-            <div>
-                <label for="admin_pass" class="block text-xs text-slate-400 mb-1.5 font-medium">رمز عبور امنیتی</label>
-                <input id="admin_pass" type="password" name="password" required autofocus class="glass-input mono-num text-left">
-            </div>
-            <button type="submit" class="btn-glass btn-primary w-full py-2.5">ورود به سیستم</button>
-        </form>
-    </div>
-</body>
-</html>"""
-
-def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -> str:
-    total_count = len(profiles)
-    blocked_count = sum(1 for p in profiles if p["is_blocked"])
-    active_count = total_count - blocked_count
-    total_hits = sum((p["sub_hits"] or 0) for p in profiles)
-    cached_items = len(sub_cache)
-
-    rows = ""
-    for p in profiles:
-        safe_name = html.escape(str(p["name"] or ""))
-        safe_token = html.escape(str(p["token"] or ""))
-        safe_note = html.escape(str(p["admin_note"] or ""))
-        safe_notice = html.escape(str(p["custom_notice"] or ""))
-        hits = p["sub_hits"] or 0
-        last_fetch = html.escape(str(p["last_sub_fetch"] or "بدون اتصال"))
-        fake_val = p["fake_total_gb"] or 0
-
-        cached_data = sub_cache.get(p["token"])
-        if cached_data and cached_data.get("info"):
-            info = cached_data["info"]
-            u, d, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_val)
-            traffic_badge = f"<span class='text-xs mono-num text-slate-200'>{format_bytes(u+d)} / {format_bytes(tot)}</span>"
-            
-            if cached_data.get("is_online"):
-                online_badge = '<span class="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>متصل</span>'
-            else:
-                last_s = cached_data.get("last_seen_text", "نامشخص")
-                online_badge = f'<span class="text-xs text-slate-400">{last_s}</span>'
-        else:
-            traffic_badge = "<span class='text-xs text-slate-500'>—</span>"
-            online_badge = "<span class='text-xs text-slate-500'>—</span>"
-
-        status_badge = (
-            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-400">مسدود</span>'
-            if p["is_blocked"] else
-            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">فعال</span>'
-        )
-        fake_label = f"<span class='mono-num text-xs text-blue-400 font-bold'>{fake_val:g} GB</span>" if fake_val > 0 else "<span class='text-slate-500 text-xs'>واقعی</span>"
-        
-        btn_class = "btn-glass text-emerald-400 border-emerald-500/30" if p["is_blocked"] else "btn-glass text-amber-400 border-amber-500/30"
-        btn_text = "فعال‌سازی" if p["is_blocked"] else "مسدود"
-        
-        p_json = html.escape(json.dumps({
-            "token": str(p["token"]),
-            "name": str(p["name"]),
-            "upstream_url": str(p["upstream_url"]),
-            "fake_total_gb": float(fake_val),
-            "custom_notice": str(p["custom_notice"] or ""),
-            "admin_note": str(p["admin_note"] or "")
-        }))
-
-        dash_url = f"https://{domain}/d/{safe_token}"
-        sub_url = f"https://{domain}/sub/{safe_token}"
-        note_html = f'<div class="text-[11px] text-amber-400/80 mt-1 font-mono leading-tight">{safe_note}</div>' if safe_note else ''
-        notice_indicator = '<span class="inline-block mr-1 text-[10px] px-1.5 py-0.2 rounded border border-blue-400/30 bg-blue-500/15 text-blue-300">اعلان</span>' if safe_notice else ''
-
-        rows += f"""
-        <tr class="profile-row border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors" data-name="{safe_name.lower()} {safe_token.lower()} {safe_note.lower()}" data-status="{'blocked' if p['is_blocked'] else 'active'}">
-            <td class="p-3.5 whitespace-nowrap">
-                <div class="font-bold text-sm text-slate-200">{safe_name} {notice_indicator}</div>
-                {note_html}
-            </td>
-            <td class="p-3.5 whitespace-nowrap">
-                <div class="flex items-center gap-1.5">
-                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn-glass px-2.5 py-1 text-xs">داشبورد</button>
-                    <button type="button" onclick="copyText('{sub_url}', 'لینک اشتراک کپی شد')" class="btn-glass px-2.5 py-1 text-xs">ساب</button>
-                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn-glass p-1.5" title="QR Code">
-                        <svg class="w-3.5 h-3.5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-                    </button>
-                </div>
-            </td>
-            <td class="p-3.5 whitespace-nowrap text-center">{online_badge}</td>
-            <td class="p-3.5 whitespace-nowrap text-center">{fake_label}</td>
-            <td class="p-3.5 whitespace-nowrap text-center">{traffic_badge}</td>
-            <td class="p-3.5 whitespace-nowrap">
-                <div class="text-xs font-semibold mono-num text-slate-300">{hits} بار</div>
-                <div class="text-[11px] text-slate-500 mt-0.5">{last_fetch}</div>
-            </td>
-            <td class="p-3.5 whitespace-nowrap text-center">{status_badge}</td>
-            <td class="p-3.5 whitespace-nowrap text-left">
-                <div class="flex justify-end items-center gap-1.5">
-                    <button type="button" onclick="openEditModal({p_json})" class="btn-glass px-2.5 py-1 text-xs">ویرایش</button>
-                    <form action="/{admin_path}/profiles/{safe_token}/refresh-cache" method="post" class="m-0">
-                        <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-glass p-1.5 text-slate-300" title="تازه‌سازی کش">
-                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
-                        </button>
-                    </form>
-                    <form action="/{admin_path}/profiles/{safe_token}/toggle-block" method="post" class="m-0">
-                        <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-glass px-2.5 py-1 text-xs {btn_class}">{btn_text}</button>
-                    </form>
-                    <form action="/{admin_path}/profiles/{safe_token}/delete" method="post" class="m-0" onsubmit="return confirm('تایید حذف نهایی ساب؟');">
-                        <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-glass btn-danger px-2.5 py-1 text-xs">حذف</button>
-                    </form>
-                </div>
-            </td>
-        </tr>"""
-
-    if not rows:
-        rows = '<tr><td colspan="8" class="p-8 text-center text-slate-500 text-xs">هنوز هیچ اشتراکی ساخته نشده است.</td></tr>'
-
-    return (
-        ADMIN_HTML_TEMPLATE
-        .replace("__DOMAIN__", domain)
-        .replace("__ADMIN_PATH__", admin_path)
-        .replace("__CSRF_TOKEN__", csrf_token)
-        .replace("__CACHED_ITEMS__", str(cached_items))
-        .replace("__TOTAL_COUNT__", str(total_count))
-        .replace("__ACTIVE_COUNT__", str(active_count))
-        .replace("__BLOCKED_COUNT__", str(blocked_count))
-        .replace("__TOTAL_HITS__", str(total_hits))
-        .replace("__ROWS__", rows)
-        .replace("__CSS__", ADMIN_PANEL_CSS)
-    )
-
 # ----------------- مسیرهای اصلی سرور (Routes) -----------------
 @app.get("/")
 async def root():
@@ -1423,7 +1329,6 @@ async def get_user_sub(token: str):
         }
     )
 
-# تحویل داشبورد React + Glisse برای هر کاربر بدون نیاز به بیلد nodejs
 @app.get("/d/{token}", response_class=HTMLResponse)
 async def user_dashboard(request: Request, token: str):
     user_agent = request.headers.get("user-agent", "")
@@ -1466,7 +1371,6 @@ async def user_dashboard(request: Request, token: str):
     percent = int((used_traffic / total_quota * 100)) if total_quota > 0 else 0
     percent = min(100, max(0, percent))
 
-    # محاسبه ایمن روزشمار انقضا
     days_left = "نامحدود"
     if expire_ts > 0:
         diff_days = int((expire_ts - time.time()) // 86400)
