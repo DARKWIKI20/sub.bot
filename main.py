@@ -511,7 +511,7 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- قالب اختصاصی داشبورد کاربران (GLISSE ENGINE) -----------------
+# ----------------- قالب داشبورد REACT + GLISSE -----------------
 DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
@@ -521,7 +521,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
     
-    <!-- کتابخانه رسمی CSS گلیس -->
+    <!-- CSS رسمی کتابخانه Glisse -->
     <link rel="stylesheet" href="https://esm.sh/glisse@0.5.0/dist/styles.css">
     
     <style>
@@ -546,7 +546,6 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
         }
     </style>
 
-    <!-- موتور کامپایلر Babel برای اجرای مستقیم JSX و Glisse در مرورگر -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 </head>
 <body>
@@ -557,7 +556,6 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
         import ReactDOM from 'https://esm.sh/react-dom@18.3.1/client';
         import { Button, TabBar, SegmentedControl, Menu, Input, Slider, Switch, Glass } from 'https://esm.sh/glisse@0.5.0?deps=react@18.3.1,react-dom@18.3.1';
 
-        // تزریق بلادرنگ اطلاعات از پایتون به کلاینت
         const DATA = __CTX_DATA__;
 
         function App() {
@@ -579,7 +577,6 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                 showToast(msg);
             };
 
-            // فیلتر هوشمند کانفیگ‌ها
             const filteredConfigs = useMemo(() => {
                 return (DATA.configs || []).filter(c => {
                     const matchProto = (filter === "all") || (c.proto.toLowerCase() === filter.toLowerCase());
@@ -592,7 +589,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                 <div className="min-h-screen p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto">
                     <main className="space-y-6">
                         
-                        {/* ۱. هدر شیشه‌ای و منوی Glisse Menu & Switch */}
+                        {/* هدر و کنترل‌های Glisse */}
                         <header className="p-5 rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl flex justify-between items-center shadow-xl">
                             <div>
                                 <h1 className="text-xl font-extrabold tracking-wide">{DATA.brand_name}</h1>
@@ -616,7 +613,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </header>
 
-                        {/* ۲. کارت لنز انکسار شیشه فیزیکی: Glisse <Glass> */}
+                        {/* لنز شیشه‌ای مایع: Glisse <Glass> */}
                         <div className="relative p-6 sm:p-8 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-2xl shadow-2xl overflow-hidden">
                             <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
                                 <div>
@@ -631,7 +628,6 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 </div>
                             </div>
 
-                            {/* کامپوننت رفرکشن لایو گلیس */}
                             <div className="flex items-center justify-center py-4">
                                 <Glass
                                     style={{
@@ -647,7 +643,6 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 />
                             </div>
 
-                            {/* کنترل انحنای شیشه با Glisse <Slider> */}
                             <div className="pt-2 flex items-center justify-between gap-4 text-xs text-slate-400">
                                 <span>انکسار لنز شیشه (Bend: {bend}%):</span>
                                 <div className="w-48">
@@ -656,7 +651,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </div>
 
-                        {/* ۳. دکمه‌های شیشه‌ای Glisse Button (Filled, Glass, Tinted, Destructive) */}
+                        {/* دکمه‌های شیشه‌ای Glisse <Button> */}
                         <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex flex-col sm:flex-row justify-between items-center gap-3">
                             <div className="mono-num text-xs text-slate-300 truncate w-full sm:w-auto">
                                 {DATA.sub_url}
@@ -674,7 +669,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </div>
 
-                        {/* ۴. فیلتر و جستجو با SegmentedControl و Input */}
+                        {/* فیلتر و جستجو با Glisse SegmentedControl و Input */}
                         <div className="space-y-4">
                             <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
                                 <SegmentedControl
@@ -699,7 +694,6 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 </div>
                             </div>
 
-                            {/* لیست کانفیگ‌ها */}
                             <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1">
                                 {filteredConfigs.map((c, idx) => (
                                     <div key={idx} className="p-3.5 rounded-2xl border border-white/10 bg-white/[0.02] hover:border-white/20 transition-all flex justify-between items-center gap-3">
@@ -724,7 +718,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </div>
 
-                        {/* ۵. تب‌بار کلاینت‌ها با افکت فیزیکی Glisse TabBar */}
+                        {/* تب‌بار کلاینت‌ها با انیمیشن لنز: Glisse <TabBar> */}
                         <div className="pt-4 space-y-4">
                             <div className="text-xs text-slate-400 text-center font-bold">دانلود نرم‌افزار اتصال مخصوص سیستم شما</div>
                             <TabBar
@@ -751,14 +745,12 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                         </div>
                     </main>
 
-                    {/* فوتر */}
                     <footer className="pt-10 pb-4 text-center">
                         <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
                             پشتیبانی تلگرام: <span className="mono-num font-bold text-blue-400">@DARK_WIKI20</span>
                         </a>
                     </footer>
 
-                    {/* مدال نمایش QR Code */}
                     {qrUrl && (
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50" onClick={() => setQrUrl(null)}>
                             <div className="p-6 rounded-3xl border border-white/20 bg-slate-900/90 shadow-2xl flex flex-col items-center max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
@@ -771,7 +763,6 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                         </div>
                     )}
 
-                    {/* توست اعلان کپی */}
                     {toast && (
                         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-white text-slate-900 font-bold text-xs shadow-2xl z-50">
                             {toast}
@@ -790,7 +781,7 @@ def render_dashboard_html(ctx: dict) -> str:
     ctx_json = json.dumps(ctx, ensure_ascii=False)
     return DASHBOARD_REACT_GLISSE_TEMPLATE.replace("__CTX_DATA__", ctx_json)
 
-# ----------------- پنل مدیریت ادمین -----------------
+# ----------------- قالب اختصاصی پنل ادمین (ایمن در برابر فواصل پایتونی) -----------------
 ADMIN_PANEL_CSS = """
 :root {
     --bg-base: #07090e;
@@ -849,6 +840,264 @@ body {
 }
 .glass-input:focus { border-color: #3b82f6; }
 """
+
+ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
+<html lang="fa" dir="rtl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مدیریت سرویس | کنترل پنل مرکزی</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
+    <style>__CSS__</style>
+</head>
+<body class="min-h-screen p-4 sm:p-6 lg:p-8">
+    <div class="max-w-7xl mx-auto space-y-6">
+        <header class="glass-container p-5 flex flex-wrap justify-between items-center gap-4">
+            <div>
+                <h1 class="text-base font-bold text-slate-100">کنترل پنل مرکزی دیتاسنتر</h1>
+                <div class="text-xs text-slate-400 mono-num mt-0.5">__DOMAIN__</div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+                <form action="/__ADMIN_PATH__/cache/clear" method="post" class="m-0">
+                    <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
+                    <button type="submit" class="btn-glass px-3 py-2 text-xs">پاکسازی کش (__CACHED_ITEMS__)</button>
+                </form>
+                <a href="/__ADMIN_PATH__/backup" class="btn-glass px-3 py-2 text-xs text-blue-300">دانلود بکاپ JSON</a>
+                <a href="/__ADMIN_PATH__/logout" class="btn-glass btn-danger px-3 py-2 text-xs">خروج</a>
+            </div>
+        </header>
+
+        <section class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div class="glass-container p-4">
+                <div class="text-xs text-slate-400 mb-1">کل اشتراک‌ها</div>
+                <div class="text-2xl font-bold mono-num text-slate-100">__TOTAL_COUNT__</div>
+            </div>
+            <div class="glass-container p-4">
+                <div class="text-xs text-slate-400 mb-1">فعال</div>
+                <div class="text-2xl font-bold mono-num text-emerald-400">__ACTIVE_COUNT__</div>
+            </div>
+            <div class="glass-container p-4">
+                <div class="text-xs text-slate-400 mb-1">مسدود شده</div>
+                <div class="text-2xl font-bold mono-num text-rose-400">__BLOCKED_COUNT__</div>
+            </div>
+            <div class="glass-container p-4">
+                <div class="text-xs text-slate-400 mb-1">سینک‌های کلاینت</div>
+                <div class="text-2xl font-bold mono-num text-blue-400">__TOTAL_HITS__</div>
+            </div>
+        </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <section class="lg:col-span-2 glass-container p-5">
+                <h2 class="text-sm font-bold text-slate-200 mb-4">ثبت اشتراک جدید</h2>
+                <form action="/__ADMIN_PATH__/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                    <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">نام یا شناسه کاربر *</label>
+                        <input type="text" name="name" placeholder="User-VIP" required class="glass-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">لینک مستقیم فروشنده (Upstream) *</label>
+                        <input type="url" name="upstream_url" placeholder="https://panel.site/sub/..." required class="glass-input mono-num text-left">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">حجم مجازی کل (GB) — اختیاری</label>
+                        <input type="number" step="0.1" min="0" name="fake_total_gb" placeholder="0 = حجم واقعی" class="glass-input mono-num text-left">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">توکن اختصاصی لینک (اختیاری)</label>
+                        <input type="text" name="custom_token" placeholder="خالی = خودکار" class="glass-input mono-num text-left">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">اعلان داشبورد</label>
+                        <input type="text" name="custom_notice" placeholder="متن پیام به کاربر..." class="glass-input">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-slate-400 mb-1">یادداشت داخلی ادمین</label>
+                        <input type="text" name="admin_note" placeholder="آیدی تلگرام، تاریخ و..." class="glass-input">
+                    </div>
+                    <div class="md:col-span-2 pt-2">
+                        <button type="submit" class="btn-glass btn-primary px-6 py-2.5">ایجاد و ذخیره اشتراک</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="glass-container p-5 flex flex-col justify-between">
+                <div>
+                    <h2 class="text-sm font-bold text-slate-200 mb-2">بازگردانی داده‌ها از بکاپ</h2>
+                    <p class="text-xs text-slate-400 mb-4 leading-relaxed">فایل JSON بکاپ قبلی خود را برای بازیابی سریع انتخاب کنید.</p>
+                    <input type="file" id="dashboardBackupFile" accept=".json" class="glass-input text-xs mb-3">
+                    <label class="flex items-center gap-2 text-xs text-slate-300 select-none cursor-pointer">
+                        <input type="checkbox" id="overwrite_backup_chk" class="rounded border-zinc-700 bg-zinc-900">
+                        <span>به‌روزرسانی رکوردهای تکراری</span>
+                    </label>
+                </div>
+                <button type="button" onclick="uploadAndRestoreBackup()" id="btnUploadBackup" class="btn-glass w-full py-2.5 mt-4 text-emerald-400">آپلود و اعمال بکاپ</button>
+            </section>
+        </div>
+
+        <section class="glass-container overflow-hidden">
+            <div class="p-4 border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <h2 class="text-sm font-bold text-slate-200">فهرست اشتراک‌ها (__TOTAL_COUNT__)</h2>
+                <div class="flex items-center gap-2">
+                    <input type="text" id="searchInput" oninput="filterTable()" placeholder="جستجو نام، توکن، یادداشت..." class="glass-input py-1.5 px-3 text-xs w-60">
+                    <select id="statusFilter" onchange="filterTable()" class="glass-input py-1.5 px-3 text-xs w-28">
+                        <option value="all">همه</option>
+                        <option value="active">فعال</option>
+                        <option value="blocked">مسدود</option>
+                    </select>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-right text-sm">
+                    <thead class="bg-white/[0.02] text-slate-400 text-xs border-b border-white/[0.06]">
+                        <tr>
+                            <th class="p-3.5 whitespace-nowrap">کاربر</th>
+                            <th class="p-3.5 whitespace-nowrap">لینک‌ها</th>
+                            <th class="p-3.5 whitespace-nowrap text-center">وضعیت</th>
+                            <th class="p-3.5 whitespace-nowrap text-center">حجم مجازی</th>
+                            <th class="p-3.5 whitespace-nowrap text-center">مصرف / سقف</th>
+                            <th class="p-3.5 whitespace-nowrap">همگام‌سازی</th>
+                            <th class="p-3.5 whitespace-nowrap text-center">دسترسی</th>
+                            <th class="p-3.5 text-left whitespace-nowrap">مدیریت</th>
+                        </tr>
+                    </thead>
+                    <tbody>__ROWS__</tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div id="editModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
+        <div class="glass-container p-6 max-w-md w-full shadow-2xl" onclick="event.stopPropagation()">
+            <h3 class="text-base font-bold mb-4 text-slate-100">ویرایش اطلاعات ساب</h3>
+            <form id="editForm" method="post" class="space-y-3">
+                <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">نام یا شناسه کاربر</label>
+                    <input type="text" id="edit_name" name="name" required class="glass-input">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">لینک مستقیم فروشنده</label>
+                    <input type="url" id="edit_upstream" name="upstream_url" required class="glass-input mono-num text-left">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">حجم مجازی کل (GB)</label>
+                    <input type="number" step="0.1" min="0" id="edit_fake" name="fake_total_gb" required class="glass-input mono-num text-left">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">اعلان داشبورد</label>
+                    <input type="text" id="edit_notice" name="custom_notice" class="glass-input">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">یادداشت داخلی ادمین</label>
+                    <input type="text" id="edit_note" name="admin_note" class="glass-input">
+                </div>
+                <div class="flex gap-2 pt-3">
+                    <button type="submit" class="btn-glass btn-primary flex-1 py-2">ذخیره تغییرات</button>
+                    <button type="button" onclick="closeEditModal()" class="btn-glass px-4 py-2">انصراف</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="adminQrModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4" onclick="closeAdminQR()">
+        <div class="glass-container p-6 max-w-xs w-full flex flex-col items-center text-center" onclick="event.stopPropagation()">
+            <div id="adminQrTitle" class="font-bold text-xs text-slate-300 mb-4 truncate w-full">QR Code</div>
+            <img id="adminQrImg" src="" alt="QR" class="w-48 h-48 rounded-xl mb-4 bg-white p-2.5 shadow-md">
+            <button type="button" onclick="closeAdminQR()" class="btn-glass w-full py-2 text-xs">بستن</button>
+        </div>
+    </div>
+
+    <div id="adminToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2.5 rounded-xl bg-white/90 text-slate-900 backdrop-blur-md text-xs font-bold shadow-2xl"></div>
+
+    <script>
+        const adminCsrfToken = "__CSRF_TOKEN__";
+        const adminPath = "__ADMIN_PATH__";
+
+        function copyText(txt, msg) {
+            navigator.clipboard.writeText(txt);
+            const t = document.getElementById('adminToast');
+            t.textContent = msg;
+            t.classList.remove('hidden');
+            setTimeout(() => t.classList.add('hidden'), 2000);
+        }
+        function openQR(url, title) {
+            document.getElementById('adminQrTitle').textContent = title;
+            document.getElementById('adminQrImg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
+            document.getElementById('adminQrModal').classList.remove('hidden');
+            document.getElementById('adminQrModal').classList.add('flex');
+        }
+        function closeAdminQR() {
+            document.getElementById('adminQrModal').classList.add('hidden');
+            document.getElementById('adminQrModal').classList.remove('flex');
+        }
+        function openEditModal(profile) {
+            document.getElementById('editForm').action = '/' + adminPath + '/profiles/' + encodeURIComponent(profile.token) + '/edit';
+            document.getElementById('edit_name').value = profile.name;
+            document.getElementById('edit_upstream').value = profile.upstream_url;
+            document.getElementById('edit_fake').value = profile.fake_total_gb;
+            document.getElementById('edit_notice').value = profile.custom_notice || '';
+            document.getElementById('edit_note').value = profile.admin_note || '';
+            document.getElementById('editModal').classList.remove('hidden');
+            document.getElementById('editModal').classList.add('flex');
+        }
+        function closeEditModal() {
+            document.getElementById('editModal').classList.add('hidden');
+            document.getElementById('editModal').classList.remove('flex');
+        }
+        function filterTable() {
+            const q = document.getElementById('searchInput').value.toLowerCase();
+            const st = document.getElementById('statusFilter').value;
+            document.querySelectorAll('.profile-row').forEach(row => {
+                const matchName = row.getAttribute('data-name').includes(q);
+                const matchStatus = (st === 'all') || (row.getAttribute('data-status') === st);
+                row.style.display = (matchName && matchStatus) ? '' : 'none';
+            });
+        }
+        async function uploadAndRestoreBackup() {
+            const fileInput = document.getElementById('dashboardBackupFile');
+            if (!fileInput.files.length) {
+                alert('لطفاً ابتدا فایل JSON بکاپ را انتخاب کنید.');
+                return;
+            }
+            const file = fileInput.files[0];
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const parsedJson = JSON.parse(e.target.result);
+                    const overwrite = document.getElementById('overwrite_backup_chk').checked;
+                    const btn = document.getElementById('btnUploadBackup');
+                    btn.disabled = true;
+                    btn.textContent = 'در حال بازگردانی...';
+
+                    const res = await fetch('/' + adminPath + '/backup/restore', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            csrf_token: adminCsrfToken,
+                            overwrite_existing: overwrite,
+                            backup: parsedJson
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.ok) {
+                        alert(data.msg);
+                        location.reload();
+                    } else {
+                        alert(data.msg || 'خطا در اعمال بکاپ');
+                        btn.disabled = false;
+                        btn.textContent = 'آپلود و اعمال بکاپ';
+                    }
+                } catch (err) {
+                    alert('فرمت فایل JSON نامعتبر است.');
+                }
+            };
+            reader.readAsText(file);
+        }
+    </script>
+</body>
+</html>"""
 
 def render_login_html(admin_path: str, error: str = None) -> str:
     err_box = f'<div class="p-3 mb-4 rounded-xl text-xs font-semibold text-center border border-rose-500/30 bg-rose-500/15 text-rose-400">{html.escape(error)}</div>' if error else ""
@@ -943,7 +1192,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
             <td class="p-3.5 whitespace-nowrap">
                 <div class="flex items-center gap-1.5">
                     <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn-glass px-2.5 py-1 text-xs">داشبورد</button>
-                    <button type="button" onclick="copyText('{sub_url}', 'لینک ساب کپی شد')" class="btn-glass px-2.5 py-1 text-xs">ساب</button>
+                    <button type="button" onclick="copyText('{sub_url}', 'لینک اشتراک کپی شد')" class="btn-glass px-2.5 py-1 text-xs">ساب</button>
                     <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn-glass p-1.5" title="QR Code">
                         <svg class="w-3.5 h-3.5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                     </button>
@@ -981,263 +1230,19 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
     if not rows:
         rows = '<tr><td colspan="8" class="p-8 text-center text-slate-500 text-xs">هنوز هیچ اشتراکی ساخته نشده است.</td></tr>'
 
-    return f"""<!DOCTYPE html>
-<html lang="fa" dir="rtl" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدیریت سرویس | کنترل پنل مرکزی</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
-    <style>{ADMIN_PANEL_CSS}</style>
-</head>
-<body class="min-h-screen p-4 sm:p-6 lg:p-8">
-    <div class="max-w-7xl mx-auto space-y-6">
-        <header class="glass-container p-5 flex flex-wrap justify-between items-center gap-4">
-            <div>
-                <h1 class="text-base font-bold text-slate-100">کنترل پنل مرکزی دیتاسنتر</h1>
-                <div class="text-xs text-slate-400 mono-num mt-0.5">{domain}</div>
-            </div>
-            <div class="flex flex-wrap items-center gap-2">
-                <form action="/{admin_path}/cache/clear" method="post" class="m-0">
-                    <input type="hidden" name="csrf_token" value="{csrf_token}">
-                    <button type="submit" class="btn-glass px-3 py-2 text-xs">پاکسازی کش ({cached_items})</button>
-                </form>
-                <a href="/{admin_path}/backup" class="btn-glass px-3 py-2 text-xs text-blue-300">دانلود بکاپ JSON</a>
-                <a href="/{admin_path}/logout" class="btn-glass btn-danger px-3 py-2 text-xs">خروج</a>
-            </div>
-        </header>
-
-        <section class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <div class="glass-container p-4">
-                <div class="text-xs text-slate-400 mb-1">کل اشتراک‌ها</div>
-                <div class="text-2xl font-bold mono-num text-slate-100">{total_count}</div>
-            </div>
-            <div class="glass-container p-4">
-                <div class="text-xs text-slate-400 mb-1">فعال</div>
-                <div class="text-2xl font-bold mono-num text-emerald-400">{active_count}</div>
-            </div>
-            <div class="glass-container p-4">
-                <div class="text-xs text-slate-400 mb-1">مسدود شده</div>
-                <div class="text-2xl font-bold mono-num text-rose-400">{blocked_count}</div>
-            </div>
-            <div class="glass-container p-4">
-                <div class="text-xs text-slate-400 mb-1">سینک‌های کلاینت</div>
-                <div class="text-2xl font-bold mono-num text-blue-400">{total_hits}</div>
-            </div>
-        </section>
-
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <section class="lg:col-span-2 glass-container p-5">
-                <h2 class="text-sm font-bold text-slate-200 mb-4">ثبت اشتراک جدید</h2>
-                <form action="/{admin_path}/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                    <input type="hidden" name="csrf_token" value="{csrf_token}">
-                    <div>
-                        <label class="block text-xs text-slate-400 mb-1">نام یا شناسه کاربر *</label>
-                        <input type="text" name="name" placeholder="User-VIP" required class="glass-input">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-slate-400 mb-1">لینک مستقیم فروشنده (Upstream) *</label>
-                        <input type="url" name="upstream_url" placeholder="https://panel.site/sub/..." required class="glass-input mono-num text-left">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-slate-400 mb-1">حجم مجازی کل (GB) — اختیاری</label>
-                        <input type="number" step="0.1" min="0" name="fake_total_gb" placeholder="0 = حجم واقعی" class="glass-input mono-num text-left">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-slate-400 mb-1">توکن اختصاصی لینک (اختیاری)</label>
-                        <input type="text" name="custom_token" placeholder="خالی = خودکار" class="glass-input mono-num text-left">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-slate-400 mb-1">اعلان داشبورد</label>
-                        <input type="text" name="custom_notice" placeholder="متن پیام به کاربر..." class="glass-input">
-                    </div>
-                    <div>
-                        <label class="block text-xs text-slate-400 mb-1">یادداشت داخلی ادمین</label>
-                        <input type="text" name="admin_note" placeholder="آیدی تلگرام، تاریخ و..." class="glass-input">
-                    </div>
-                    <div class="md:col-span-2 pt-2">
-                        <button type="submit" class="btn-glass btn-primary px-6 py-2.5">ایجاد و ذخیره اشتراک</button>
-                    </div>
-                </form>
-            </section>
-
-            <section class="glass-container p-5 flex flex-col justify-between">
-                <div>
-                    <h2 class="text-sm font-bold text-slate-200 mb-2">بازگردانی داده‌ها از بکاپ</h2>
-                    <p class="text-xs text-slate-400 mb-4 leading-relaxed">فایل JSON بکاپ قبلی خود را برای بازیابی سریع انتخاب کنید.</p>
-                    <input type="file" id="dashboardBackupFile" accept=".json" class="glass-input text-xs mb-3">
-                    <label class="flex items-center gap-2 text-xs text-slate-300 select-none cursor-pointer">
-                        <input type="checkbox" id="overwrite_backup_chk" class="rounded border-zinc-700 bg-zinc-900">
-                        <span>به‌روزرسانی رکوردهای تکراری</span>
-                    </label>
-                </div>
-                <button type="button" onclick="uploadAndRestoreBackup()" id="btnUploadBackup" class="btn-glass w-full py-2.5 mt-4 text-emerald-400">آپلود و اعمال بکاپ</button>
-            </section>
-        </div>
-
-        <section class="glass-container overflow-hidden">
-            <div class="p-4 border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h2 class="text-sm font-bold text-slate-200">فهرست اشتراک‌ها ({total_count})</h2>
-                <div class="flex items-center gap-2">
-                    <input type="text" id="searchInput" oninput="filterTable()" placeholder="جستجو نام، توکن، یادداشت..." class="glass-input py-1.5 px-3 text-xs w-60">
-                    <select id="statusFilter" onchange="filterTable()" class="glass-input py-1.5 px-3 text-xs w-28">
-                        <option value="all">همه</option>
-                        <option value="active">فعال</option>
-                        <option value="blocked">مسدود</option>
-                    </select>
-                </div>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-right text-sm">
-                    <thead class="bg-white/[0.02] text-slate-400 text-xs border-b border-white/[0.06]">
-                        <tr>
-                            <th class="p-3.5 whitespace-nowrap">کاربر</th>
-                            <th class="p-3.5 whitespace-nowrap">لینک‌ها</th>
-                            <th class="p-3.5 whitespace-nowrap text-center">وضعیت</th>
-                            <th class="p-3.5 whitespace-nowrap text-center">حجم مجازی</th>
-                            <th class="p-3.5 whitespace-nowrap text-center">مصرف / سقف</th>
-                            <th class="p-3.5 whitespace-nowrap">همگام‌سازی</th>
-                            <th class="p-3.5 whitespace-nowrap text-center">دسترسی</th>
-                            <th class="p-3.5 text-left whitespace-nowrap">مدیریت</th>
-                        </tr>
-                    </thead>
-                    <tbody>{rows}</tbody>
-                </table>
-            </div>
-        </section>
-    </div>
-
-    <div id="editModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
-        <div class="glass-container p-6 max-w-md w-full shadow-2xl" onclick="event.stopPropagation()">
-            <h3 class="text-base font-bold mb-4 text-slate-100">ویرایش اطلاعات ساب</h3>
-            <form id="editForm" method="post" class="space-y-3">
-                <input type="hidden" name="csrf_token" value="{csrf_token}">
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">نام یا شناسه کاربر</label>
-                    <input type="text" id="edit_name" name="name" required class="glass-input">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">لینک مستقیم فروشنده</label>
-                    <input type="url" id="edit_upstream" name="upstream_url" required class="glass-input mono-num text-left">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">حجم مجازی کل (GB)</label>
-                    <input type="number" step="0.1" min="0" id="edit_fake" name="fake_total_gb" required class="glass-input mono-num text-left">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">اعلان داشبورد</label>
-                    <input type="text" id="edit_notice" name="custom_notice" class="glass-input">
-                </div>
-                <div>
-                    <label class="block text-xs text-slate-400 mb-1">یادداشت داخلی ادمین</label>
-                    <input type="text" id="edit_note" name="admin_note" class="glass-input">
-                </div>
-                <div class="flex gap-2 pt-3">
-                    <button type="submit" class="btn-glass btn-primary flex-1 py-2">ذخیره تغییرات</button>
-                    <button type="button" onclick="closeEditModal()" class="btn-glass px-4 py-2">انصراف</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <div id="adminQrModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4" onclick="closeAdminQR()">
-        <div class="glass-container p-6 max-w-xs w-full flex flex-col items-center text-center" onclick="event.stopPropagation()">
-            <div id="adminQrTitle" class="font-bold text-xs text-slate-300 mb-4 truncate w-full">QR Code</div>
-            <img id="adminQrImg" src="" alt="QR" class="w-48 h-48 rounded-xl mb-4 bg-white p-2.5 shadow-md">
-            <button type="button" onclick="closeAdminQR()" class="btn-glass w-full py-2 text-xs">بستن</button>
-        </div>
-    </div>
-
-    <div id="adminToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2.5 rounded-xl bg-white/90 text-slate-900 backdrop-blur-md text-xs font-bold shadow-2xl"></div>
-
-    <script>
-        const adminCsrfToken = "{csrf_token}";
-        const adminPath = "{admin_path}";
-
-        function copyText(txt, msg) {
-            navigator.clipboard.writeText(txt);
-            const t = document.getElementById('adminToast');
-            t.textContent = msg;
-            t.classList.remove('hidden');
-            setTimeout(() => t.classList.add('hidden'), 2000);
-        }
-        function openQR(url, title) {
-            document.getElementById('adminQrTitle').textContent = title;
-            document.getElementById('adminQrImg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
-            document.getElementById('adminQrModal').classList.remove('hidden');
-            document.getElementById('adminQrModal').classList.add('flex');
-        }
-        function closeAdminQR() {
-            document.getElementById('adminQrModal').classList.add('hidden');
-            document.getElementById('adminQrModal').classList.remove('flex');
-        }
-        function openEditModal(profile) {
-            document.getElementById('editForm').action = '/' + adminPath + '/profiles/' + encodeURIComponent(profile.token) + '/edit';
-            document.getElementById('edit_name').value = profile.name;
-            document.getElementById('edit_upstream').value = profile.upstream_url;
-            document.getElementById('edit_fake').value = profile.fake_total_gb;
-            document.getElementById('edit_notice').value = profile.custom_notice || '';
-            document.getElementById('edit_note').value = profile.admin_note || '';
-            document.getElementById('editModal').classList.remove('hidden');
-            document.getElementById('editModal').classList.add('flex');
-        }
-        function closeEditModal() {
-            document.getElementById('editModal').classList.add('hidden');
-            document.getElementById('editModal').classList.remove('flex');
-        }
-        function filterTable() {
-            const q = document.getElementById('searchInput').value.toLowerCase();
-            const st = document.getElementById('statusFilter').value;
-            document.querySelectorAll('.profile-row').forEach(row => {
-                const matchName = row.getAttribute('data-name').includes(q);
-                const matchStatus = (st === 'all') || (row.getAttribute('data-status') === st);
-                row.style.display = (matchName && matchStatus) ? '' : 'none';
-            });
-        }
-        async function uploadAndRestoreBackup() {
-            const fileInput = document.getElementById('dashboardBackupFile');
-            if (!fileInput.files.length) {
-                alert('لطفاً ابتدا فایل JSON بکاپ را انتخاب کنید.');
-                return;
-            }
-            const file = fileInput.files[0];
-            const reader = new FileReader();
-            reader.onload = async function(e) {
-                try {
-                    const parsedJson = JSON.parse(e.target.result);
-                    const overwrite = document.getElementById('overwrite_backup_chk').checked;
-                    const btn = document.getElementById('btnUploadBackup');
-                    btn.disabled = true;
-                    btn.textContent = 'در حال بازگردانی...';
-
-                    const res = await fetch('/' + adminPath + '/backup/restore', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            csrf_token: adminCsrfToken,
-                            overwrite_existing: overwrite,
-                            backup: parsedJson
-                        })
-                    });
-                    const data = await res.json();
-                    if (data.ok) {
-                        alert(data.msg);
-                        location.reload();
-                    } else {
-                        alert(data.msg || 'خطا در اعمال بکاپ');
-                        btn.disabled = false;
-                        btn.textContent = 'آپلود و اعمال بکاپ';
-                    }
-                } catch (err) {
-                    alert('فرمت فایل JSON نامعتبر است.');
-                }
-            };
-            reader.readAsText(file);
-        }
-    </script>
-</body>
-</html>"""
+    return (
+        ADMIN_HTML_TEMPLATE
+        .replace("__DOMAIN__", domain)
+        .replace("__ADMIN_PATH__", admin_path)
+        .replace("__CSRF_TOKEN__", csrf_token)
+        .replace("__CACHED_ITEMS__", str(cached_items))
+        .replace("__TOTAL_COUNT__", str(total_count))
+        .replace("__ACTIVE_COUNT__", str(active_count))
+        .replace("__BLOCKED_COUNT__", str(blocked_count))
+        .replace("__TOTAL_HITS__", str(total_hits))
+        .replace("__ROWS__", rows)
+        .replace("__CSS__", ADMIN_PANEL_CSS)
+    )
 
 # ----------------- مسیرهای اصلی سرور (Routes) -----------------
 @app.get("/")
@@ -1282,7 +1287,7 @@ async def get_user_sub(token: str):
         }
     )
 
-# تحویل داشبورد React + Glisse برای هر کاربر به صورت مستقل و بدون نیاز به بیلد
+# تحویل داشبورد React + Glisse برای هر کاربر بدون نیاز به بیلد nodejs
 @app.get("/d/{token}", response_class=HTMLResponse)
 async def user_dashboard(request: Request, token: str):
     user_agent = request.headers.get("user-agent", "")
@@ -1607,7 +1612,7 @@ async def delete_profile(request: Request, token: str):
     sub_cache.pop(token, None)
     return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
-# ----------------- وبهوک ربات تلگرام -----------------
+# ----------------- وب‌هوک ربات تلگرام -----------------
 @app.post("/webhook")
 async def telegram_webhook(req: Request):
     if not BOT_TOKEN:
