@@ -511,7 +511,7 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- قالب داشبورد REACT + GLISSE -----------------
+# ----------------- قالب اختصاصی داشبورد کاربران (GLISSE ENGINE) -----------------
 DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
@@ -586,14 +586,14 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             }, [filter, search]);
 
             return (
-                <div className="min-h-screen p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto">
+                <div className="min-h-screen p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto space-y-6">
                     <main className="space-y-6">
                         
-                        {/* هدر و کنترل‌های Glisse */}
-                        <header className="p-5 rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl flex justify-between items-center shadow-xl">
+                        {/* ۱. هدر شیشه‌ای و منوی گزینه‌ها */}
+                        <header className="p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl flex justify-between items-center shadow-lg">
                             <div>
-                                <h1 className="text-xl font-extrabold tracking-wide">{DATA.brand_name}</h1>
-                                <div className="text-xs text-blue-400 font-semibold mt-0.5">Liquid Glass • Engine v0.5.0</div>
+                                <h1 className="text-lg sm:text-xl font-extrabold tracking-wide">{DATA.brand_name}</h1>
+                                <div className="text-xs text-blue-400 font-mono mt-0.5">Liquid Glass • v0.5.0</div>
                             </div>
                             <div className="flex items-center gap-3">
                                 <div className="hidden sm:flex items-center gap-2">
@@ -613,27 +613,28 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </header>
 
-                        {/* لنز شیشه‌ای مایع: Glisse <Glass> */}
-                        <div className="relative p-6 sm:p-8 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-2xl shadow-2xl overflow-hidden">
-                            <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                        {/* ۲. کارت مشخصات و لنز انکسار شیشه ای Glisse <Glass> */}
+                        <div className="p-5 sm:p-6 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-xl space-y-4">
+                            <div className="flex justify-between items-center pb-2 border-b border-white/[0.06]">
                                 <div>
                                     <div className="text-xs text-slate-400 mb-1">مصرف اشتراک جاری</div>
-                                    <div className="text-3xl font-black mono-num text-slate-100">
+                                    <div className="text-2xl sm:text-3xl font-black mono-num text-slate-100">
                                         {DATA.used_traffic} <span className="text-sm font-normal text-slate-400">/ {DATA.total_quota}</span>
                                     </div>
                                 </div>
-                                <div className="sm:text-left">
+                                <div className="text-left">
                                     <div className="text-xs text-slate-400 mb-1">اعتبار زمانی</div>
                                     <div className="text-xl font-bold mono-num text-emerald-400">{DATA.days_left} روز</div>
                                 </div>
                             </div>
 
-                            <div className="flex items-center justify-center py-4">
+                            {/* محفظه لنز با ایزولاسیون LTR برای تثبیت انکسار */}
+                            <div className="w-full flex justify-center py-2" dir="ltr">
                                 <Glass
                                     style={{
                                         width: "100%",
-                                        height: 90,
-                                        borderRadius: 24,
+                                        height: 75,
+                                        borderRadius: 20,
                                         background: "none",
                                         "--lg-glass-bend": bend / 100,
                                         "--lg-glass-dispersion": 0,
@@ -643,20 +644,24 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 />
                             </div>
 
-                            <div className="pt-2 flex items-center justify-between gap-4 text-xs text-slate-400">
+                            {/* اسلایدر با کانتینر LTR جهت جلوگیری از باگ تراز درگ */}
+                            <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
                                 <span>انکسار لنز شیشه (Bend: {bend}%):</span>
-                                <div className="w-48">
+                                <div className="w-40 sm:w-56" dir="ltr">
                                     <Slider aria-label="Lens Bend" value={bend} onValueChange={setBend} min={10} max={100} />
                                 </div>
                             </div>
                         </div>
 
-                        {/* دکمه‌های شیشه‌ای Glisse <Button> */}
-                        <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex flex-col sm:flex-row justify-between items-center gap-3">
-                            <div className="mono-num text-xs text-slate-300 truncate w-full sm:w-auto">
-                                {DATA.sub_url}
+                        {/* ۳. ردیف آدرس ساب و دکمه‌های کنترلی Glisse Button */}
+                        <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-3">
+                            <div className="w-full sm:flex-1 min-w-0">
+                                <div className="text-xs text-slate-400 mb-1">لینک اختصاصی هوشمند:</div>
+                                <div className="mono-num text-xs text-slate-200 bg-black/40 px-3 py-2 rounded-xl border border-white/5 truncate select-all">
+                                    {DATA.sub_url}
+                                </div>
                             </div>
-                            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end pt-1 sm:pt-4">
                                 <Button variant="filled" onClick={() => copyText(DATA.sub_url, "آدرس ساب کپی شد")}>
                                     کپی لینک ساب
                                 </Button>
@@ -669,21 +674,23 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </div>
 
-                        {/* فیلتر و جستجو با Glisse SegmentedControl و Input */}
-                        <div className="space-y-4">
-                            <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
-                                <SegmentedControl
-                                    aria-label="Protocol Range"
-                                    items={[
-                                        { value: "all", label: "همه پروتکل‌ها" },
-                                        { value: "vless", label: "VLESS" },
-                                        { value: "vmess", label: "VMESS" },
-                                        { value: "trojan", label: "Trojan" }
-                                    ]}
-                                    value={filter}
-                                    onValueChange={setFilter}
-                                />
-                                <div className="w-full sm:w-64">
+                        {/* ۴. فیلتر و جستجو با اصلاح تراز جهت */}
+                        <div className="space-y-3">
+                            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+                                <div dir="ltr" className="w-full sm:w-auto">
+                                    <SegmentedControl
+                                        aria-label="Protocol Range"
+                                        items={[
+                                            { value: "all", label: "همه" },
+                                            { value: "vless", label: "VLESS" },
+                                            { value: "vmess", label: "VMESS" },
+                                            { value: "trojan", label: "Trojan" }
+                                        ]}
+                                        value={filter}
+                                        onValueChange={setFilter}
+                                    />
+                                </div>
+                                <div className="w-full sm:w-64" dir="rtl">
                                     <Input
                                         type="search"
                                         aria-label="Search"
@@ -694,63 +701,109 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 </div>
                             </div>
 
-                            <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1">
-                                {filteredConfigs.map((c, idx) => (
-                                    <div key={idx} className="p-3.5 rounded-2xl border border-white/10 bg-white/[0.02] hover:border-white/20 transition-all flex justify-between items-center gap-3">
-                                        <div className="flex items-center gap-2.5 min-w-0">
-                                            <span className="mono-num text-[11px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30 uppercase">
-                                                {c.proto}
-                                            </span>
-                                            <span dir="ltr" className="text-xs sm:text-sm font-semibold truncate text-slate-200">
-                                                {c.name}
-                                            </span>
-                                        </div>
-                                        <div className="flex items-center gap-2 shrink-0">
-                                            <Button variant="glass" onClick={() => copyText(c.link, "کانفیگ کپی شد")}>
-                                                کپی
-                                            </Button>
-                                            <Button variant="tinted" onClick={() => setQrUrl(c.link)}>
-                                                QR
-                                            </Button>
-                                        </div>
+                            {/* لیست کانفیگ‌ها با ساختار تراز شده */}
+                            <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
+                                {filteredConfigs.length === 0 ? (
+                                    <div className="p-6 text-center text-xs text-slate-500 rounded-2xl border border-white/5 bg-white/[0.01]">
+                                        سروری با این مشخصات یافت نشد.
                                     </div>
-                                ))}
+                                ) : (
+                                    filteredConfigs.map((c, idx) => (
+                                        <div key={idx} className="p-3 rounded-xl border border-white/10 bg-white/[0.02] hover:border-white/20 transition-colors flex items-center justify-between gap-3">
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                <span className="mono-num text-[11px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30 uppercase shrink-0">
+                                                    {c.proto}
+                                                </span>
+                                                <span className="text-xs sm:text-sm font-medium truncate text-slate-200" dir="auto">
+                                                    {c.name}
+                                                </span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                <Button variant="glass" onClick={() => copyText(c.link, "کانفیگ کپی شد")}>
+                                                    کپی
+                                                </Button>
+                                                <Button variant="tinted" onClick={() => setQrUrl(c.link)}>
+                                                    QR
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
                             </div>
                         </div>
 
-                        {/* تب‌بار کلاینت‌ها با انیمیشن لنز: Glisse <TabBar> */}
-                        <div className="pt-4 space-y-4">
-                            <div className="text-xs text-slate-400 text-center font-bold">دانلود نرم‌افزار اتصال مخصوص سیستم شما</div>
-                            <TabBar
-                                aria-label="Platforms"
-                                items={[
-                                    { value: "android", label: "اندروید" },
-                                    { value: "ios", label: "آیفون (iOS)" },
-                                    { value: "windows", label: "ویندوز" },
-                                    { value: "mac", label: "مک / لینوکس" }
-                                ]}
-                                value={tab}
-                                onValueChange={setTab}
-                                style={{ "--lg-lens-grow-x": "15px", "--lg-lens-grow-y": "10px" }}
-                            />
+                        {/* ۵. تب‌بار کلاینت‌ها با ایزولاسیون LTR جهت حل باگ اورلپ دکمه‌ها */}
+                        <div className="pt-2 space-y-3">
+                            <div className="text-xs text-slate-400 text-center font-semibold">دانلود نرم‌افزار اتصال</div>
+                            <div dir="ltr" className="flex justify-center w-full overflow-x-auto py-1">
+                                <TabBar
+                                    aria-label="Platforms"
+                                    items={[
+                                        { value: "android", label: "Android" },
+                                        { value: "ios", label: "iOS" },
+                                        { value: "windows", label: "Windows" },
+                                        { value: "mac", label: "macOS / Linux" }
+                                    ]}
+                                    value={tab}
+                                    onValueChange={setTab}
+                                    style={{ "--lg-lens-grow-x": "12px", "--lg-lens-grow-y": "8px" }}
+                                />
+                            </div>
                             
-                            <div className="grid grid-cols-2 gap-3 pt-2">
-                                <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
-                                    دانلود نرم‌افزار Hiddify
-                                </Button>
-                                <Button variant="glass" onClick={() => window.open("https://github.com/2dust/v2rayNG/releases")}>
-                                    دانلود نرم‌افزار v2rayNG
-                                </Button>
+                            {/* دکمه‌های متناسب با پلتفرم انتخاب شده */}
+                            <div className="grid grid-cols-2 gap-3 pt-1">
+                                {tab === "android" && (
+                                    <>
+                                        <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
+                                            دانلود Hiddify (اندروید)
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/2dust/v2rayNG/releases")}>
+                                            دانلود v2rayNG
+                                        </Button>
+                                    </>
+                                )}
+                                {tab === "ios" && (
+                                    <>
+                                        <Button variant="tinted filled" onClick={() => window.open("https://apps.apple.com/us/app/hiddify-proxy-vpn/id6596777532")}>
+                                            دانلود Hiddify (آیفون)
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://apps.apple.com/us/app/streisand/id6450534064")}>
+                                            دانلود Streisand
+                                        </Button>
+                                    </>
+                                )}
+                                {tab === "windows" && (
+                                    <>
+                                        <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
+                                            دانلود Hiddify (ویندوز)
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/2dust/v2rayN/releases")}>
+                                            دانلود v2rayN
+                                        </Button>
+                                    </>
+                                )}
+                                {tab === "mac" && (
+                                    <>
+                                        <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
+                                            دانلود Hiddify (مک)
+                                        </Button>
+                                        <Button variant="glass" onClick={() => window.open("https://github.com/clash-verge-rev/clash-verge-rev/releases")}>
+                                            دانلود Clash Verge
+                                        </Button>
+                                    </>
+                                )}
                             </div>
                         </div>
                     </main>
 
-                    <footer className="pt-10 pb-4 text-center">
+                    {/* فوتر */}
+                    <footer className="pt-8 pb-4 text-center">
                         <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
                             پشتیبانی تلگرام: <span className="mono-num font-bold text-blue-400">@DARK_WIKI20</span>
                         </a>
                     </footer>
 
+                    {/* مدال نمایش QR Code */}
                     {qrUrl && (
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50" onClick={() => setQrUrl(null)}>
                             <div className="p-6 rounded-3xl border border-white/20 bg-slate-900/90 shadow-2xl flex flex-col items-center max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
@@ -763,6 +816,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                         </div>
                     )}
 
+                    {/* توست اعلان کپی */}
                     {toast && (
                         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-white text-slate-900 font-bold text-xs shadow-2xl z-50">
                             {toast}
@@ -1089,9 +1143,9 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
                         btn.disabled = false;
                         btn.textContent = 'آپلود و اعمال بکاپ';
                     }
-                } catch (err) {
+                } catch (err) {{
                     alert('فرمت فایل JSON نامعتبر است.');
-                }
+                }}
             };
             reader.readAsText(file);
         }
@@ -1247,7 +1301,6 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
 # ----------------- مسیرهای اصلی سرور (Routes) -----------------
 @app.get("/")
 async def root():
-    # جهت امنیت: مسیر اصلی بدون توکن خطای 404 برمی‌گرداند
     raise HTTPException(status_code=404, detail="Not Found")
 
 @app.get("/sub/{token}")
