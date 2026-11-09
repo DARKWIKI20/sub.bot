@@ -19,7 +19,6 @@ from fastapi.responses import Response, HTMLResponse, RedirectResponse, JSONResp
 from fastapi.middleware.gzip import GZipMiddleware
 
 BRAND_DEFAULT = os.getenv("BRAND_NAME", "VIP")
-# پشتیبانی همزمان از دامنه‌های Render و Railway و مقدار دستی
 PUBLIC_URL = (
     os.getenv("RENDER_EXTERNAL_HOSTNAME")
     or os.getenv("RAILWAY_PUBLIC_DOMAIN")
@@ -27,6 +26,9 @@ PUBLIC_URL = (
 )
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "SuperSecretLongPassword_987654321_ChangeMe!")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
+
+# مسیر مخفی ادمین (قابل تنظیم از Environment Variables در Render)
+ADMIN_SECRET_PATH = os.getenv("ADMIN_SECRET_PATH", "manage-panel-x92").strip("/")
 
 SECRET_KEY = hashlib.sha256(f"{ADMIN_PASSWORD}_datacenter_v3_salt".encode()).digest()
 WEBHOOK_SECRET = hashlib.sha256(f"{BOT_TOKEN}_tg_webhook".encode()).hexdigest()[:32] if BOT_TOKEN else ""
@@ -196,7 +198,7 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- محاسبات تاریخ، وضعیت اتصال و ترافیک -----------------
+# ----------------- محاسبات تاریخ و ترافیک -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
@@ -635,7 +637,7 @@ body {
 }
 """
 
-def render_login_html(error: str = None) -> str:
+def render_login_html(admin_path: str, error: str = None) -> str:
     err_box = f'<div role="alert" class="p-3.5 mb-4 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-bold text-center animate-enter">{html.escape(error)}</div>' if error else ""
     return f"""<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
@@ -656,7 +658,7 @@ def render_login_html(error: str = None) -> str:
         <h1 class="text-xl font-extrabold mb-1 text-center">ورود به پنل مدیریت دیتاسنتر</h1>
         <p class="text-xs text-slate-400 text-center mb-6">کنترل نشست رمزنگاری‌شده و ضد Brute-Force</p>
         {err_box}
-        <form action="/admin/login" method="post" class="space-y-4">
+        <form action="/{admin_path}/login" method="post" class="space-y-4">
             <div>
                 <label for="admin_pass" class="block text-xs text-slate-400 mb-2">رمز عبور ادمین</label>
                 <input id="admin_pass" type="password" name="password" required autofocus class="w-full bg-zinc-950/90 border border-zinc-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-[#4b85d1] text-left font-mono">
@@ -668,7 +670,7 @@ def render_login_html(error: str = None) -> str:
 </body>
 </html>"""
 
-def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
+def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -> str:
     total_count = len(profiles)
     blocked_count = sum(1 for p in profiles if p["is_blocked"])
     active_count = total_count - blocked_count
@@ -753,15 +755,15 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             <td class="p-4 whitespace-nowrap">
                 <div class="flex justify-center items-center gap-1.5">
                     <button type="button" onclick="openEditModal({p_json})" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 border border-blue-500/20 transition-colors cursor-pointer">ویرایش</button>
-                    <form action="/admin/profiles/{safe_token}/refresh-cache" method="post" class="m-0">
+                    <form action="/{admin_path}/profiles/{safe_token}/refresh-cache" method="post" class="m-0">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
                         <button type="submit" class="btn-press min-h-[36px] px-2.5 rounded-xl text-xs font-semibold bg-zinc-800 hover:bg-zinc-700 text-slate-300 transition-colors cursor-pointer" title="بروزرسانی کش">🔄</button>
                     </form>
-                    <form action="/admin/profiles/{safe_token}/toggle-block" method="post" class="m-0">
+                    <form action="/{admin_path}/profiles/{safe_token}/toggle-block" method="post" class="m-0">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
                         <button type="submit" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold transition-colors cursor-pointer {btn_class}">{btn_text}</button>
                     </form>
-                    <form action="/admin/profiles/{safe_token}/delete" method="post" class="m-0" onsubmit="return confirm('آیا از حذف کامل این ساب اطمینان داری؟');">
+                    <form action="/{admin_path}/profiles/{safe_token}/delete" method="post" class="m-0" onsubmit="return confirm('آیا از حذف کامل این ساب اطمینان داری؟');">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
                         <button type="submit" class="btn-press min-h-[36px] px-3 rounded-xl text-xs font-semibold bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition-colors cursor-pointer">حذف</button>
                     </form>
@@ -795,12 +797,12 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
                 </div>
             </div>
             <div class="flex flex-wrap items-center gap-2.5">
-                <form action="/admin/cache/clear" method="post" class="m-0">
+                <form action="/{admin_path}/cache/clear" method="post" class="m-0">
                     <input type="hidden" name="csrf_token" value="{csrf_token}">
                     <button type="submit" class="btn-press min-h-[42px] px-4 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-xs font-bold transition-colors cursor-pointer">پاکسازی کل کش ({cached_items})</button>
                 </form>
-                <a href="/admin/backup" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-[#4b85d1]/15 hover:bg-[#4b85d1]/25 text-[#4b85d1] border border-[#4b85d1]/30 rounded-xl text-xs font-bold transition-colors">دانلود بکاپ JSON</a>
-                <a href="/admin/logout" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-colors">خروج</a>
+                <a href="/{admin_path}/backup" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-[#4b85d1]/15 hover:bg-[#4b85d1]/25 text-[#4b85d1] border border-[#4b85d1]/30 rounded-xl text-xs font-bold transition-colors">دانلود بکاپ JSON</a>
+                <a href="/{admin_path}/logout" class="btn-press min-h-[42px] px-4 inline-flex items-center bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 rounded-xl text-xs font-bold transition-colors">خروج</a>
             </div>
         </header>
 
@@ -848,7 +850,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
                 <svg class="w-5 h-5 text-[#4b85d1]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
                 افزودن اشتراک جدید
             </h2>
-            <form action="/admin/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <form action="/{admin_path}/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <input type="hidden" name="csrf_token" value="{csrf_token}">
                 <div>
                     <label class="block text-xs text-slate-400 mb-1.5">نام یا برند نمایشی *</label>
@@ -959,6 +961,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
 
     <script>
         const adminCsrfToken = "{csrf_token}";
+        const adminPath = "{admin_path}";
 
         function copyText(txt, msg) {{
             navigator.clipboard.writeText(txt);
@@ -978,7 +981,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
             document.getElementById('adminQrModal').classList.remove('flex');
         }}
         function openEditModal(profile) {{
-            document.getElementById('editForm').action = '/admin/profiles/' + encodeURIComponent(profile.token) + '/edit';
+            document.getElementById('editForm').action = '/' + adminPath + '/profiles/' + encodeURIComponent(profile.token) + '/edit';
             document.getElementById('edit_name').value = profile.name;
             document.getElementById('edit_upstream').value = profile.upstream_url;
             document.getElementById('edit_fake').value = profile.fake_total_gb;
@@ -1018,7 +1021,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str) -> str:
                     btn.disabled = true;
                     btn.textContent = 'در حال بازگردانی دیتابیس...';
 
-                    const res = await fetch('/admin/backup/restore', {{
+                    const res = await fetch('/' + adminPath + '/backup/restore', {{
                         method: 'POST',
                         headers: {{ 'Content-Type': 'application/json' }},
                         body: JSON.stringify({{
@@ -1426,18 +1429,9 @@ def render_dashboard_html(ctx: dict) -> str:
 
 # ----------------- مسیرها (Routes) -----------------
 @app.get("/")
-async def root(request: Request):
-    user_agent = request.headers.get("user-agent", "")
-    with get_db() as conn:
-        profile = conn.execute("SELECT * FROM profiles ORDER BY id DESC LIMIT 1").fetchone()
-    
-    if not profile:
-        return RedirectResponse(url="/admin")
-    
-    if is_v2ray_client(user_agent):
-        return await get_user_sub(profile["token"])
-        
-    return RedirectResponse(url=f"/d/{profile['token']}")
+async def root():
+    # جهت امنیت: مسیر اصلی هیچ اطلاعاتی نشان نمی‌دهد
+    raise HTTPException(status_code=404, detail="Not Found")
 
 @app.get("/sub/{token}")
 async def get_user_sub(token: str):
@@ -1551,24 +1545,25 @@ async def user_dashboard(request: Request, token: str):
     }
     return HTMLResponse(content=render_dashboard_html(ctx))
 
-@app.get("/admin", response_class=HTMLResponse)
+# ----------------- مسیرهای مخفی و امن ادمین -----------------
+@app.get(f"/{ADMIN_SECRET_PATH}", response_class=HTMLResponse)
 async def admin_panel(request: Request):
     if not is_admin(request):
-        return HTMLResponse(content=render_login_html())
+        return HTMLResponse(content=render_login_html(admin_path=ADMIN_SECRET_PATH))
 
     with get_db() as conn:
         profiles = conn.execute("SELECT * FROM profiles ORDER BY id DESC").fetchall()
 
     clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
     csrf_tok = get_csrf_token(request)
-    return HTMLResponse(content=render_admin_html(profiles, clean_domain, csrf_tok))
+    return HTMLResponse(content=render_admin_html(profiles, clean_domain, csrf_tok, admin_path=ADMIN_SECRET_PATH))
 
-@app.post("/admin/login")
+@app.post(f"/{ADMIN_SECRET_PATH}/login")
 async def admin_login(request: Request):
     client_ip = get_client_ip(request)
     if not check_rate_limit(client_ip):
         return HTMLResponse(
-            content=render_login_html("تعداد تلاش‌های ناموفق زیاد است. لطفاً ۱۰ دقیقه بعد امتحان کن."),
+            content=render_login_html(admin_path=ADMIN_SECRET_PATH, error="تعداد تلاش‌های ناموفق زیاد است. لطفاً ۱۰ دقیقه بعد امتحان کن."),
             status_code=429
         )
 
@@ -1577,28 +1572,28 @@ async def admin_login(request: Request):
 
     if secrets.compare_digest(password, ADMIN_PASSWORD):
         login_attempts.pop(client_ip, None)
-        response = RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
+        response = RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
         is_secure = not PUBLIC_URL.startswith("localhost")
         response.set_cookie(
             key=COOKIE_NAME,
             value=create_session_token(),
             httponly=True,
             secure=is_secure,
-            samesite="strict",
+            samesite="lax",
             max_age=SESSION_TTL
         )
         return response
 
     record_failed_login(client_ip)
-    return HTMLResponse(content=render_login_html("رمز عبور نادرست است."), status_code=401)
+    return HTMLResponse(content=render_login_html(admin_path=ADMIN_SECRET_PATH, error="رمز عبور نادرست است."), status_code=401)
 
-@app.get("/admin/logout")
+@app.get(f"/{ADMIN_SECRET_PATH}/logout")
 async def admin_logout():
-    response = RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
+    response = RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
     response.delete_cookie(COOKIE_NAME)
     return response
 
-@app.get("/admin/backup")
+@app.get(f"/{ADMIN_SECRET_PATH}/backup")
 async def admin_backup(request: Request):
     if not is_admin(request):
         raise HTTPException(status_code=401)
@@ -1610,7 +1605,7 @@ async def admin_backup(request: Request):
         headers={"Content-Disposition": "attachment; filename=datacenter_subs_backup.json"}
     )
 
-@app.post("/admin/backup/restore")
+@app.post(f"/{ADMIN_SECRET_PATH}/backup/restore")
 async def admin_restore_backup(request: Request):
     if not is_admin(request):
         raise HTTPException(status_code=401)
@@ -1674,7 +1669,7 @@ async def admin_restore_backup(request: Request):
     sub_cache.clear()
     return JSONResponse(content={"ok": True, "msg": f"تعداد {restored_count} اشتراک با موفقیت بازگردانی شد."})
 
-@app.post("/admin/cache/clear")
+@app.post(f"/{ADMIN_SECRET_PATH}/cache/clear")
 async def clear_all_cache(request: Request):
     if not is_admin(request):
         raise HTTPException(status_code=401)
@@ -1682,9 +1677,9 @@ async def clear_all_cache(request: Request):
     if not verify_csrf(request, form_data.get("csrf_token", [""])[0]):
         raise HTTPException(status_code=403, detail="CSRF token invalid")
     sub_cache.clear()
-    return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
-@app.post("/admin/profiles/add")
+@app.post(f"/{ADMIN_SECRET_PATH}/profiles/add")
 async def add_profile(request: Request):
     if not is_admin(request):
         raise HTTPException(status_code=401)
@@ -1722,9 +1717,9 @@ async def add_profile(request: Request):
             except sqlite3.IntegrityError:
                 pass
 
-    return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
-@app.post("/admin/profiles/{token}/edit")
+@app.post(f"/{ADMIN_SECRET_PATH}/profiles/{{token}}/edit")
 async def edit_profile(request: Request, token: str):
     if not is_admin(request):
         raise HTTPException(status_code=401)
@@ -1755,9 +1750,9 @@ async def edit_profile(request: Request, token: str):
             conn.commit()
 
     sub_cache.pop(token, None)
-    return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
-@app.post("/admin/profiles/{token}/refresh-cache")
+@app.post(f"/{ADMIN_SECRET_PATH}/profiles/{{token}}/refresh-cache")
 async def refresh_single_cache(request: Request, token: str):
     if not is_admin(request):
         raise HTTPException(status_code=401)
@@ -1772,9 +1767,9 @@ async def refresh_single_cache(request: Request, token: str):
             await get_cached_sub_data(token, profile["upstream_url"])
         except Exception:
             pass
-    return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
-@app.post("/admin/profiles/{token}/toggle-block")
+@app.post(f"/{ADMIN_SECRET_PATH}/profiles/{{token}}/toggle-block")
 async def toggle_block(request: Request, token: str):
     if not is_admin(request):
         raise HTTPException(status_code=401)
@@ -1787,9 +1782,9 @@ async def toggle_block(request: Request, token: str):
         conn.commit()
 
     sub_cache.pop(token, None)
-    return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
-@app.post("/admin/profiles/{token}/delete")
+@app.post(f"/{ADMIN_SECRET_PATH}/profiles/{{token}}/delete")
 async def delete_profile(request: Request, token: str):
     if not is_admin(request):
         raise HTTPException(status_code=401)
@@ -1802,8 +1797,9 @@ async def delete_profile(request: Request, token: str):
         conn.commit()
 
     sub_cache.pop(token, None)
-    return RedirectResponse(url="/admin", status_code=status.HTTP_302_FOUND)
+    return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
+# ----------------- وبهوک تلگرام -----------------
 @app.post("/webhook")
 async def telegram_webhook(req: Request):
     if not BOT_TOKEN:
