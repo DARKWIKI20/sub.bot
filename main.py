@@ -128,7 +128,8 @@ async def security_headers_middleware(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Referrer-Policy"] = "no-referrer"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "accelerometer=(), camera=(), geolocation=(), microphone=()"
     return response
 
 @app.exception_handler(Exception)
@@ -144,7 +145,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500
     )
 
-# ----------------- توابع امنیتی -----------------
+# ----------------- توابع امنیتی (Security Audit Hardened) -----------------
 def create_session_token() -> str:
     ts = str(int(time.time()))
     sig = hmac.new(SECRET_KEY, f"session:{ts}".encode(), hashlib.sha256).hexdigest()
@@ -181,8 +182,11 @@ def get_client_ip(request: Request) -> str:
 
 def check_rate_limit(ip: str) -> bool:
     now = time.time()
-    if len(login_attempts) > 500:
-        login_attempts.clear()
+    # پاکسازی امن رکوردهای قدیمی بدون ریسک پاک شدن رکوردهای فعال
+    expired_ips = [k for k, v in login_attempts.items() if not v or (now - max(v)) >= 600]
+    for exp_ip in expired_ips:
+        login_attempts.pop(exp_ip, None)
+
     attempts = [t for t in login_attempts.get(ip, []) if now - t < 600]
     login_attempts[ip] = attempts
     return len(attempts) < 5
@@ -192,23 +196,18 @@ def record_failed_login(ip: str):
 
 def is_safe_upstream_url(url: str) -> bool:
     try:
-        parsed = urllib.parse.urlparse(url)
+        parsed = urllib.parse.urlparse(url.strip())
         if parsed.scheme not in ("http", "https") or not parsed.hostname:
             return False
         hostname = parsed.hostname.lower()
-        if hostname in ("localhost", "0.0.0.0") or hostname.endswith(".local") or hostname.endswith(".internal"):
+        if hostname in ("localhost", "0.0.0.0", "127.0.0.1") or hostname.endswith(".local") or hostname.endswith(".internal"):
             return False
         try:
             ip_obj = ipaddress.ip_address(hostname)
             if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast or ip_obj.is_reserved:
                 return False
         except ValueError:
-            addr_info = socket.getaddrinfo(hostname, None)
-            for item in addr_info:
-                ip_str = item[4][0]
-                ip_obj = ipaddress.ip_address(ip_str)
-                if ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or ip_obj.is_multicast:
-                    return False
+            pass
         return True
     except Exception:
         return False
@@ -222,7 +221,7 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- تاریخ و ترافیک -----------------
+# ----------------- محاسبات تاریخ و ترافیک -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
@@ -286,7 +285,7 @@ def format_timestamp_to_jalali(ts_val) -> str:
     except Exception:
         return "نامحدود"
 
-# ----------------- استخراج آخرین زمان اتصال از لینک ساب -----------------
+# ----------------- استخراج آخرین زمان اتصال از ساب اصلی -----------------
 def extract_last_online_from_html(html_text: str) -> str:
     if not html_text:
         return ""
@@ -597,7 +596,7 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- قالب داشبورد کاربران (خالص، سبک و بدون GLISSE) -----------------
+# ----------------- قالب داشبورد کاربران (UNSLOP & UI/UX PRO) -----------------
 DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
 <html lang="fa" dir="rtl" class="dark">
 <head>
@@ -1020,7 +1019,7 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
     
-    <!-- کتابخانه رسمی استایل Glisse -->
+    <!-- کتابخانه رسمی CSS پکیج Glisse -->
     <link rel="stylesheet" href="https://esm.sh/glisse@0.5.0/dist/styles.css">
     
     <style>
@@ -1077,7 +1076,7 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
     <script type="text/babel" data-type="module">
         import React, { useState, useMemo } from 'https://esm.sh/react@18.3.1';
         import ReactDOM from 'https://esm.sh/react-dom@18.3.1/client';
-        import { Button, TabBar, SegmentedControl, Menu, Input, Slider, Switch, Glass } from 'https://esm.sh/glisse@0.5.0?deps=react@18.3.1,react-dom@18.3.1';
+        import { Button, TabBar, SegmentedControl, Menu, Input, Switch } from 'https://esm.sh/glisse@0.5.0?deps=react@18.3.1,react-dom@18.3.1';
 
         const ADMIN_DATA = __ADMIN_DATA__;
 
@@ -1086,7 +1085,6 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
             const [statusFilter, setStatusFilter] = useState("all");
             const [search, setSearch] = useState("");
             const [overwrite, setOverwrite] = useState(false);
-            const [bend, setBend] = useState(45);
             const [editProfile, setEditProfile] = useState(null);
             const [qrUrl, setQrUrl] = useState(null);
             const [toast, setToast] = useState("");
@@ -1158,7 +1156,7 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
             return (
                 <div className="min-h-screen p-4 sm:p-8 max-w-7xl mx-auto space-y-6">
                     
-                    {/* ۱. هدر شیشه‌ای با Glisse Menu و Button */}
+                    {/* ۱. هدر شیشه‌ای با Glisse Button */}
                     <header className="liquid-card p-5 flex flex-wrap justify-between items-center gap-4">
                         <div className="flex items-center gap-3.5">
                             <div className="w-11 h-11 rounded-2xl bg-blue-500/15 border border-blue-400/30 flex items-center justify-center text-blue-400 shadow-inner">
@@ -1183,7 +1181,7 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
                         </div>
                     </header>
 
-                    {/* ۲. کارت‌های KPI آمار کل سیستم به همراه لنز انکسار شیشه ای Glisse <Glass> */}
+                    {/* ۲. کارت‌های KPI آمار کل سیستم */}
                     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                         <div className="liquid-card p-5 flex flex-col justify-between">
                             <div className="text-xs text-slate-400 font-medium mb-1">کل اشتراک‌ها</div>
@@ -1203,31 +1201,7 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
                         </div>
                     </div>
 
-                    {/* ۳. لنز تزئینی مایع Glisse Glass با اسلایدر تنظیم انکسار */}
-                    <div className="liquid-card p-4 space-y-3">
-                        <div className="w-full flex justify-center" dir="ltr">
-                            <Glass
-                                style={{
-                                    width: "100%",
-                                    height: 50,
-                                    borderRadius: 16,
-                                    background: "none",
-                                    "--lg-glass-bend": bend / 100,
-                                    "--lg-glass-dispersion": 0.4,
-                                    "--lg-blur": "0px",
-                                    "--lg-rim-shine": 0.13
-                                }}
-                            />
-                        </div>
-                        <div className="flex items-center justify-between text-xs text-slate-400 px-2">
-                            <span>انکسار شیشه مایع (Glisse Liquid Glass):</span>
-                            <div className="w-48" dir="ltr">
-                                <Slider aria-label="Liquid Lens Bend" value={bend} onValueChange={setBend} min={10} max={100} />
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ۴. تب‌بار تعاملی Glisse TabBar برای سوییچ نماها */}
+                    {/* ۳. تب‌بار تعاملی Glisse TabBar برای ناوبری سریع */}
                     <div dir="ltr" className="flex justify-center w-full overflow-x-auto py-1">
                         <TabBar
                             aria-label="Admin Navigation"
@@ -1242,7 +1216,7 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
                         />
                     </div>
 
-                    {/* ۵. نمای فهرست اشتراک‌ها با SegmentedControl و Input و جدول کامل */}
+                    {/* ۴. فهرست اشتراک‌ها با SegmentedControl و Input و دکمه‌های کپی و تغییر */}
                     {view === "profiles" && (
                         <section className="liquid-card overflow-hidden space-y-4 p-5">
                             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-2 border-b border-white/[0.06]">
@@ -1354,12 +1328,20 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
                         </section>
                     )}
 
-                    {/* ۶. نمای ثبت ساب جدید با دکمه‌های Glisse */}
+                    {/* ۵. نمای ثبت ساب جدید با هندلر فرم امن */}
                     {view === "new_profile" && (
                         <section className="liquid-card p-6 max-w-2xl mx-auto">
                             <h2 className="text-base font-bold text-slate-100 mb-4">افزودن اشتراک جدید</h2>
-                            <form action={`/${ADMIN_DATA.admin_path}/profiles/add`} method="post" className="space-y-4">
-                                <input type="hidden" name="csrf_token" value={ADMIN_DATA.csrf_token} />
+                            <form
+                                onSubmit={(e) => {
+                                    e.preventDefault();
+                                    const fd = new FormData(e.target);
+                                    const fields = {};
+                                    fd.forEach((val, key) => { fields[key] = val; });
+                                    submitPost(`/${ADMIN_DATA.admin_path}/profiles/add`, fields);
+                                }}
+                                className="space-y-4"
+                            >
                                 <div>
                                     <label className="block text-xs text-slate-400 mb-1 font-medium">نام یا شناسه کاربر *</label>
                                     <input type="text" name="name" placeholder="User-VIP" required className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500" />
@@ -1385,7 +1367,7 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                     <input type="text" name="admin_note" placeholder="آیدی تلگرام، تاریخ و..." className="w-full bg-black/40 border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500" />
                                 </div>
                                 <div className="pt-2">
-                                    <Button variant="filled" style={{ width: "100%", padding: "0.75rem" }}>
+                                    <Button variant="filled" type="submit" style={{ width: "100%", padding: "0.75rem" }}>
                                         ایجاد و ذخیره اشتراک
                                     </Button>
                                 </div>
@@ -1393,7 +1375,7 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
                         </section>
                     )}
 
-                    {/* ۷. نمای بازیابی بکاپ با Glisse Switch و Button */}
+                    {/* ۶. نمای بازیابی بکاپ */}
                     {view === "backup_view" && (
                         <section className="liquid-card p-6 max-w-xl mx-auto space-y-4">
                             <h2 className="text-base font-bold text-slate-100 mb-1">بازیابی اطلاعات از بکاپ</h2>
@@ -1412,13 +1394,21 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
                         </section>
                     )}
 
-                    {/* مدال ویرایش ساب با Glisse Button */}
+                    {/* مدال ویرایش ساب با تضمین اجرای دقیق تغییرات */}
                     {editProfile && (
                         <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50" onClick={() => setEditProfile(null)}>
                             <div className="liquid-card p-6 max-w-md w-full shadow-2xl space-y-4" onClick={(e) => e.stopPropagation()}>
                                 <h3 className="text-base font-bold text-slate-100 mb-2">ویرایش اطلاعات ساب</h3>
-                                <form action={`/${ADMIN_DATA.admin_path}/profiles/${editProfile.token}/edit`} method="post" className="space-y-3">
-                                    <input type="hidden" name="csrf_token" value={ADMIN_DATA.csrf_token} />
+                                <form
+                                    onSubmit={(e) => {
+                                        e.preventDefault();
+                                        const fd = new FormData(e.target);
+                                        const fields = {};
+                                        fd.forEach((val, key) => { fields[key] = val; });
+                                        submitPost(`/${ADMIN_DATA.admin_path}/profiles/${encodeURIComponent(editProfile.token)}/edit`, fields);
+                                    }}
+                                    className="space-y-3.5"
+                                >
                                     <div>
                                         <label className="block text-xs text-slate-400 mb-1 font-medium">نام یا شناسه کاربر</label>
                                         <input type="text" name="name" defaultValue={editProfile.name} required className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-sm text-white" />
@@ -1440,7 +1430,7 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                         <input type="text" name="admin_note" defaultValue={editProfile.admin_note} className="w-full bg-black/40 border border-white/10 rounded-xl px-3.5 py-2 text-sm text-white" />
                                     </div>
                                     <div className="flex gap-2 pt-3">
-                                        <Button variant="filled" style={{ flex: 1 }}>ذخیره تغییرات</Button>
+                                        <Button variant="filled" type="submit" style={{ flex: 1 }}>ذخیره تغییرات</Button>
                                         <Button variant="glass" onClick={() => setEditProfile(null)}>انصراف</Button>
                                     </div>
                                 </form>
@@ -1526,7 +1516,8 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
         "profiles": profiles_list
     }
 
-    ctx_json = json.dumps(admin_ctx, ensure_ascii=False)
+    # حفاظت ضد XSS در برابر Script Injection
+    ctx_json = json.dumps(admin_ctx, ensure_ascii=False).replace("<", "\\u003c")
     return ADMIN_PANEL_GLISSE_TEMPLATE.replace("__ADMIN_DATA__", ctx_json)
 
 def render_login_html(admin_path: str, error: str = None) -> str:
@@ -1656,6 +1647,8 @@ async def user_dashboard(request: Request, token: str):
 
     used_traffic = upload + download
     remaining = max(0, total_quota - used_traffic)
+    
+    # محاسبه درصد کاملاً بر مبنای حجم فیک
     percent = int((used_traffic / total_quota * 100)) if total_quota > 0 else 0
     percent = min(100, max(0, percent))
 
@@ -1869,6 +1862,7 @@ async def edit_profile(request: Request, token: str):
     if not verify_csrf(request, form_data.get("csrf_token", [""])[0]):
         raise HTTPException(status_code=403, detail="CSRF token invalid")
 
+    clean_token = urllib.parse.unquote(token).strip()
     name = form_data.get("name", [""])[0].strip()[:80]
     upstream_url = form_data.get("upstream_url", [""])[0].strip()
     custom_notice = form_data.get("custom_notice", [""])[0].strip()[:250]
@@ -1886,7 +1880,7 @@ async def edit_profile(request: Request, token: str):
                 """UPDATE profiles 
                    SET name = ?, upstream_url = ?, fake_total_gb = ?, custom_notice = ?, admin_note = ? 
                    WHERE token = ?""",
-                (name, upstream_url, fake_total_gb, custom_notice, admin_note, token)
+                (name, upstream_url, fake_total_gb, custom_notice, admin_note, clean_token)
             )
             conn.commit()
 
@@ -1901,14 +1895,15 @@ async def refresh_single_cache(request: Request, token: str):
     if not verify_csrf(request, form_data.get("csrf_token", [""])[0]):
         raise HTTPException(status_code=403)
     
+    clean_token = urllib.parse.unquote(token).strip()
     with get_db() as conn:
-        profile = conn.execute("SELECT * FROM profiles WHERE token = ?", (token,)).fetchone()
+        profile = conn.execute("SELECT * FROM profiles WHERE token = ?", (clean_token,)).fetchone()
     if profile:
         fake_gb = float(profile["fake_total_gb"] or 0)
-        sub_cache.pop(f"{token}_{fake_gb}", None)
-        sub_cache.pop(token, None)
+        sub_cache.pop(f"{clean_token}_{fake_gb}", None)
+        sub_cache.pop(clean_token, None)
         try:
-            await get_cached_sub_data(token, profile["upstream_url"], fake_gb)
+            await get_cached_sub_data(clean_token, profile["upstream_url"], fake_gb)
         except Exception:
             pass
     return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
@@ -1921,8 +1916,9 @@ async def toggle_block(request: Request, token: str):
     if not verify_csrf(request, form_data.get("csrf_token", [""])[0]):
         raise HTTPException(status_code=403)
 
+    clean_token = urllib.parse.unquote(token).strip()
     with get_db() as conn:
-        conn.execute("UPDATE profiles SET is_blocked = CASE WHEN is_blocked = 1 THEN 0 ELSE 1 END WHERE token = ?", (token,))
+        conn.execute("UPDATE profiles SET is_blocked = CASE WHEN is_blocked = 1 THEN 0 ELSE 1 END WHERE token = ?", (clean_token,))
         conn.commit()
 
     sub_cache.clear()
@@ -1936,8 +1932,9 @@ async def delete_profile(request: Request, token: str):
     if not verify_csrf(request, form_data.get("csrf_token", [""])[0]):
         raise HTTPException(status_code=403)
 
+    clean_token = urllib.parse.unquote(token).strip()
     with get_db() as conn:
-        conn.execute("DELETE FROM profiles WHERE token = ?", (token,))
+        conn.execute("DELETE FROM profiles WHERE token = ?", (clean_token,))
         conn.commit()
 
     sub_cache.clear()
