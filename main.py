@@ -16,7 +16,6 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import Response, HTMLResponse, RedirectResponse, JSONResponse
-from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.gzip import GZipMiddleware
 
 BRAND_DEFAULT = os.getenv("BRAND_NAME", "VIP")
@@ -48,9 +47,6 @@ MAX_UPSTREAM_BYTES = 2097152
 sub_cache = {}
 login_attempts = {}
 http_client: httpx.AsyncClient = None
-
-# اطمینان از وجود پوشه استاتیک برای جلوگیری از کرش بیلد
-os.makedirs("dist/assets", exist_ok=True)
 
 # ----------------- دیتابیس -----------------
 def get_db():
@@ -123,9 +119,6 @@ async def security_headers_middleware(request: Request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "no-referrer"
     return response
-
-# ماونت کردن فایل‌های استاتیک کامپایل‌شده Vite
-app.mount("/assets", StaticFiles(directory="dist/assets"), name="assets")
 
 # ----------------- توابع امنیتی -----------------
 def create_session_token() -> str:
@@ -205,7 +198,7 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- پردازش ترافیک و تاریخ -----------------
+# ----------------- محاسبات تاریخ و ترافیک -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
@@ -245,21 +238,21 @@ def format_relative_time(past_timestamp: float) -> str:
         if diff < 0:
             return "هم‌اکنون"
         if diff < 60:
-            return f"{to_persian_num(str(diff))} ثانیه قبل"
+            return f"{to_persian_num(str(diff))} ثانیه پیش"
         minutes = diff // 60
         if minutes < 60:
-            return f"{to_persian_num(str(minutes))} دقیقه قبل"
+            return f"{to_persian_num(str(minutes))} دقیقه پیش"
         hours = minutes // 60
         if hours < 24:
-            return f"{to_persian_num(str(hours))} ساعت قبل"
+            return f"{to_persian_num(str(hours))} ساعت پیش"
         days = hours // 24
         if days < 7:
-            return f"{to_persian_num(str(days))} روز قبل"
+            return f"{to_persian_num(str(days))} روز پیش"
         weeks = days // 7
         if weeks < 4:
-            return f"{to_persian_num(str(weeks))} هفته قبل"
+            return f"{to_persian_num(str(weeks))} هفته پیش"
         months = days // 30
-        return f"{to_persian_num(str(months))} ماه قبل"
+        return f"{to_persian_num(str(months))} ماه پیش"
     except Exception:
         return "نامشخص"
 
@@ -518,13 +511,291 @@ def is_v2ray_client(user_agent: str) -> bool:
     )
     return any(sig in ua for sig in client_signatures)
 
-# ----------------- رابط کاربری پنل ادمین -----------------
+# ----------------- قالب اختصاصی داشبورد کاربران (GLISSE ENGINE) -----------------
+DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
+<html lang="fa" dir="rtl" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>داشبورد اشتراک هوشمند</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
+    
+    <!-- کتابخانه رسمی CSS گلیس -->
+    <link rel="stylesheet" href="https://esm.sh/glisse@0.5.0/dist/styles.css">
+    
+    <style>
+        :root {
+            --bg-base: #06080e;
+        }
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Vazirmatn FD', sans-serif;
+            background-color: var(--bg-base);
+            color: #f8fafc;
+            min-height: 100vh;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 45%),
+                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.1) 0%, transparent 45%);
+            background-attachment: fixed;
+        }
+        .mono-num {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+            direction: ltr !important;
+            display: inline-block;
+        }
+    </style>
+
+    <!-- موتور کامپایلر Babel برای اجرای مستقیم JSX و Glisse در مرورگر -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+    <div id="root" data-glisse-backdrop></div>
+
+    <script type="text/babel" data-type="module">
+        import React, { useState, useMemo } from 'https://esm.sh/react@18.3.1';
+        import ReactDOM from 'https://esm.sh/react-dom@18.3.1/client';
+        import { Button, TabBar, SegmentedControl, Menu, Input, Slider, Switch, Glass } from 'https://esm.sh/glisse@0.5.0?deps=react@18.3.1,react-dom@18.3.1';
+
+        // تزریق بلادرنگ اطلاعات از پایتون به کلاینت
+        const DATA = __CTX_DATA__;
+
+        function App() {
+            const [filter, setFilter] = useState("all");
+            const [tab, setTab] = useState("android");
+            const [search, setSearch] = useState("");
+            const [bend, setBend] = useState(45);
+            const [isOnline, setIsOnline] = useState(DATA.is_online);
+            const [toast, setToast] = useState("");
+            const [qrUrl, setQrUrl] = useState(null);
+
+            const showToast = (msg) => {
+                setToast(msg);
+                setTimeout(() => setToast(""), 2200);
+            };
+
+            const copyText = (txt, msg) => {
+                navigator.clipboard.writeText(txt);
+                showToast(msg);
+            };
+
+            // فیلتر هوشمند کانفیگ‌ها
+            const filteredConfigs = useMemo(() => {
+                return (DATA.configs || []).filter(c => {
+                    const matchProto = (filter === "all") || (c.proto.toLowerCase() === filter.toLowerCase());
+                    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase());
+                    return matchProto && matchSearch;
+                });
+            }, [filter, search]);
+
+            return (
+                <div className="min-h-screen p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto">
+                    <main className="space-y-6">
+                        
+                        {/* ۱. هدر شیشه‌ای و منوی Glisse Menu & Switch */}
+                        <header className="p-5 rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl flex justify-between items-center shadow-xl">
+                            <div>
+                                <h1 className="text-xl font-extrabold tracking-wide">{DATA.brand_name}</h1>
+                                <div className="text-xs text-blue-400 font-semibold mt-0.5">Liquid Glass • Engine v0.5.0</div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                <div className="hidden sm:flex items-center gap-2">
+                                    <span className="text-xs text-slate-300 font-medium">سنسور اتصال:</span>
+                                    <Switch aria-label="Live Status" checked={isOnline} onCheckedChange={setIsOnline} />
+                                </div>
+                                <Menu
+                                    aria-label="Options"
+                                    items={[
+                                        { label: "کپی آدرس ساب", onSelect: () => copyText(DATA.sub_url, "لینک ساب کپی شد") },
+                                        { label: "کپی تمام سرورها", onSelect: () => copyText((DATA.configs || []).map(c=>c.link).join("\\n"), "تمام کانفیگ‌ها کپی شدند") },
+                                        { label: "کد QR اشتراک", onSelect: () => setQrUrl(DATA.sub_url) },
+                                        "separator",
+                                        { label: "پشتیبانی تلگرام", onSelect: () => window.open("https://t.me/DARK_WIKI20") }
+                                    ]}
+                                />
+                            </div>
+                        </header>
+
+                        {/* ۲. کارت لنز انکسار شیشه فیزیکی: Glisse <Glass> */}
+                        <div className="relative p-6 sm:p-8 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-2xl shadow-2xl overflow-hidden">
+                            <div className="relative z-10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+                                <div>
+                                    <div className="text-xs text-slate-400 mb-1">مصرف اشتراک جاری</div>
+                                    <div className="text-3xl font-black mono-num text-slate-100">
+                                        {DATA.used_traffic} <span className="text-sm font-normal text-slate-400">/ {DATA.total_quota}</span>
+                                    </div>
+                                </div>
+                                <div className="sm:text-left">
+                                    <div className="text-xs text-slate-400 mb-1">اعتبار زمانی</div>
+                                    <div className="text-xl font-bold mono-num text-emerald-400">{DATA.days_left} روز</div>
+                                </div>
+                            </div>
+
+                            {/* کامپوننت رفرکشن لایو گلیس */}
+                            <div className="flex items-center justify-center py-4">
+                                <Glass
+                                    style={{
+                                        width: "100%",
+                                        height: 90,
+                                        borderRadius: 24,
+                                        background: "none",
+                                        "--lg-glass-bend": bend / 100,
+                                        "--lg-glass-dispersion": 0,
+                                        "--lg-blur": "2.5px",
+                                        "--lg-rim-shine": 0.25
+                                    }}
+                                />
+                            </div>
+
+                            {/* کنترل انحنای شیشه با Glisse <Slider> */}
+                            <div className="pt-2 flex items-center justify-between gap-4 text-xs text-slate-400">
+                                <span>انکسار لنز شیشه (Bend: {bend}%):</span>
+                                <div className="w-48">
+                                    <Slider aria-label="Lens Bend" value={bend} onValueChange={setBend} min={10} max={100} />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* ۳. دکمه‌های شیشه‌ای Glisse Button (Filled, Glass, Tinted, Destructive) */}
+                        <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex flex-col sm:flex-row justify-between items-center gap-3">
+                            <div className="mono-num text-xs text-slate-300 truncate w-full sm:w-auto">
+                                {DATA.sub_url}
+                            </div>
+                            <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                                <Button variant="filled" onClick={() => copyText(DATA.sub_url, "آدرس ساب کپی شد")}>
+                                    کپی لینک ساب
+                                </Button>
+                                <Button variant="glass" onClick={() => setQrUrl(DATA.sub_url)}>
+                                    اسکن QR
+                                </Button>
+                                <Button variant="destructive" onClick={() => location.reload()}>
+                                    تازه‌سازی
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* ۴. فیلتر و جستجو با SegmentedControl و Input */}
+                        <div className="space-y-4">
+                            <div className="flex flex-col sm:flex-row justify-between items-center gap-3">
+                                <SegmentedControl
+                                    aria-label="Protocol Range"
+                                    items={[
+                                        { value: "all", label: "همه پروتکل‌ها" },
+                                        { value: "vless", label: "VLESS" },
+                                        { value: "vmess", label: "VMESS" },
+                                        { value: "trojan", label: "Trojan" }
+                                    ]}
+                                    value={filter}
+                                    onValueChange={setFilter}
+                                />
+                                <div className="w-full sm:w-64">
+                                    <Input
+                                        type="search"
+                                        aria-label="Search"
+                                        placeholder="جستجوی کانفیگ..."
+                                        value={search}
+                                        onValueChange={setSearch}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* لیست کانفیگ‌ها */}
+                            <div className="max-h-80 overflow-y-auto space-y-2.5 pr-1">
+                                {filteredConfigs.map((c, idx) => (
+                                    <div key={idx} className="p-3.5 rounded-2xl border border-white/10 bg-white/[0.02] hover:border-white/20 transition-all flex justify-between items-center gap-3">
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                            <span className="mono-num text-[11px] font-bold px-2 py-0.5 rounded bg-blue-500/20 text-blue-300 border border-blue-400/30 uppercase">
+                                                {c.proto}
+                                            </span>
+                                            <span dir="ltr" className="text-xs sm:text-sm font-semibold truncate text-slate-200">
+                                                {c.name}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                            <Button variant="glass" onClick={() => copyText(c.link, "کانفیگ کپی شد")}>
+                                                کپی
+                                            </Button>
+                                            <Button variant="tinted" onClick={() => setQrUrl(c.link)}>
+                                                QR
+                                            </Button>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* ۵. تب‌بار کلاینت‌ها با افکت فیزیکی Glisse TabBar */}
+                        <div className="pt-4 space-y-4">
+                            <div className="text-xs text-slate-400 text-center font-bold">دانلود نرم‌افزار اتصال مخصوص سیستم شما</div>
+                            <TabBar
+                                aria-label="Platforms"
+                                items={[
+                                    { value: "android", label: "اندروید" },
+                                    { value: "ios", label: "آیفون (iOS)" },
+                                    { value: "windows", label: "ویندوز" },
+                                    { value: "mac", label: "مک / لینوکس" }
+                                ]}
+                                value={tab}
+                                onValueChange={setTab}
+                                style={{ "--lg-lens-grow-x": "15px", "--lg-lens-grow-y": "10px" }}
+                            />
+                            
+                            <div className="grid grid-cols-2 gap-3 pt-2">
+                                <Button variant="tinted filled" onClick={() => window.open("https://github.com/hiddify/hiddify-next/releases")}>
+                                    دانلود نرم‌افزار Hiddify
+                                </Button>
+                                <Button variant="glass" onClick={() => window.open("https://github.com/2dust/v2rayNG/releases")}>
+                                    دانلود نرم‌افزار v2rayNG
+                                </Button>
+                            </div>
+                        </div>
+                    </main>
+
+                    {/* فوتر */}
+                    <footer className="pt-10 pb-4 text-center">
+                        <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" className="text-xs text-slate-400 hover:text-slate-200 transition-colors">
+                            پشتیبانی تلگرام: <span className="mono-num font-bold text-blue-400">@DARK_WIKI20</span>
+                        </a>
+                    </footer>
+
+                    {/* مدال نمایش QR Code */}
+                    {qrUrl && (
+                        <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 z-50" onClick={() => setQrUrl(null)}>
+                            <div className="p-6 rounded-3xl border border-white/20 bg-slate-900/90 shadow-2xl flex flex-col items-center max-w-xs w-full" onClick={(e) => e.stopPropagation()}>
+                                <div className="text-xs font-bold mb-4 text-slate-300">کد QR اختصاصی</div>
+                                <img src={"https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=" + encodeURIComponent(qrUrl)} alt="QR" className="w-52 h-52 rounded-xl bg-white p-2.5 mb-5 shadow-lg" />
+                                <Button variant="glass" onClick={() => setQrUrl(null)} style={{ width: "100%" }}>
+                                    بستن
+                                </Button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* توست اعلان کپی */}
+                    {toast && (
+                        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 rounded-xl bg-white text-slate-900 font-bold text-xs shadow-2xl z-50">
+                            {toast}
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+</body>
+</html>"""
+
+def render_dashboard_html(ctx: dict) -> str:
+    ctx_json = json.dumps(ctx, ensure_ascii=False)
+    return DASHBOARD_REACT_GLISSE_TEMPLATE.replace("__CTX_DATA__", ctx_json)
+
+# ----------------- پنل مدیریت ادمین -----------------
 ADMIN_PANEL_CSS = """
 :root {
     --bg-base: #07090e;
     --glass-bg: rgba(18, 24, 38, 0.65);
     --glass-border: rgba(255, 255, 255, 0.12);
-    --glass-highlight: rgba(255, 255, 255, 0.2);
 }
 * { box-sizing: border-box; }
 body {
@@ -543,7 +814,6 @@ body {
     backdrop-filter: blur(16px);
     -webkit-backdrop-filter: blur(16px);
     border: 1px solid var(--glass-border);
-    box-shadow: 0 8px 32px 0 rgba(0,0,0,0.45), inset 0 1px 1px 0 var(--glass-highlight);
     border-radius: 18px;
 }
 .btn-glass {
@@ -564,17 +834,9 @@ body {
     background: rgba(255, 255, 255, 0.12);
     border-color: rgba(255, 255, 255, 0.3);
 }
-.btn-glass:active { transform: scale(0.97); }
-.btn-primary {
-    background: #2563eb;
-    border-color: #3b82f6;
-}
+.btn-primary { background: #2563eb; border-color: #3b82f6; }
 .btn-primary:hover { background: #1d4ed8; }
-.btn-danger {
-    background: rgba(244, 63, 94, 0.15);
-    border-color: rgba(244, 63, 94, 0.35);
-    color: #fb7185;
-}
+.btn-danger { background: rgba(244, 63, 94, 0.15); border-color: rgba(244, 63, 94, 0.35); color: #fb7185; }
 .glass-input {
     width: 100%;
     background: rgba(10, 14, 22, 0.7);
@@ -595,7 +857,7 @@ def render_login_html(admin_path: str, error: str = None) -> str:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>مدیریت | ورود به سیستم</title>
+    <title>ورود مدیریت دیتاسنتر</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
     <style>{ADMIN_PANEL_CSS}</style>
@@ -630,7 +892,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
         safe_note = html.escape(p["admin_note"] or "")
         safe_notice = html.escape(p["custom_notice"] or "")
         hits = p["sub_hits"] or 0
-        last_fetch = html.escape(p["last_sub_fetch"] or "اتصال ثبت نشده")
+        last_fetch = html.escape(p["last_sub_fetch"] or "بدون اتصال")
         fake_val = p["fake_total_gb"] or 0
 
         cached_data = sub_cache.get(p["token"])
@@ -681,7 +943,7 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
             <td class="p-3.5 whitespace-nowrap">
                 <div class="flex items-center gap-1.5">
                     <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn-glass px-2.5 py-1 text-xs">داشبورد</button>
-                    <button type="button" onclick="copyText('{sub_url}', 'لینک اشتراک کپی شد')" class="btn-glass px-2.5 py-1 text-xs">ساب</button>
+                    <button type="button" onclick="copyText('{sub_url}', 'لینک ساب کپی شد')" class="btn-glass px-2.5 py-1 text-xs">ساب</button>
                     <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn-glass p-1.5" title="QR Code">
                         <svg class="w-3.5 h-3.5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                     </button>
@@ -893,24 +1155,24 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
         const adminCsrfToken = "{csrf_token}";
         const adminPath = "{admin_path}";
 
-        function copyText(txt, msg) {{
+        function copyText(txt, msg) {
             navigator.clipboard.writeText(txt);
             const t = document.getElementById('adminToast');
             t.textContent = msg;
             t.classList.remove('hidden');
             setTimeout(() => t.classList.add('hidden'), 2000);
-        }}
-        function openQR(url, title) {{
+        }
+        function openQR(url, title) {
             document.getElementById('adminQrTitle').textContent = title;
             document.getElementById('adminQrImg').src = 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=' + encodeURIComponent(url);
             document.getElementById('adminQrModal').classList.remove('hidden');
             document.getElementById('adminQrModal').classList.add('flex');
-        }}
-        function closeAdminQR() {{
+        }
+        function closeAdminQR() {
             document.getElementById('adminQrModal').classList.add('hidden');
             document.getElementById('adminQrModal').classList.remove('flex');
-        }}
-        function openEditModal(profile) {{
+        }
+        function openEditModal(profile) {
             document.getElementById('editForm').action = '/' + adminPath + '/profiles/' + encodeURIComponent(profile.token) + '/edit';
             document.getElementById('edit_name').value = profile.name;
             document.getElementById('edit_upstream').value = profile.upstream_url;
@@ -919,65 +1181,65 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
             document.getElementById('edit_note').value = profile.admin_note || '';
             document.getElementById('editModal').classList.remove('hidden');
             document.getElementById('editModal').classList.add('flex');
-        }}
-        function closeEditModal() {{
+        }
+        function closeEditModal() {
             document.getElementById('editModal').classList.add('hidden');
             document.getElementById('editModal').classList.remove('flex');
-        }}
-        function filterTable() {{
+        }
+        function filterTable() {
             const q = document.getElementById('searchInput').value.toLowerCase();
             const st = document.getElementById('statusFilter').value;
-            document.querySelectorAll('.profile-row').forEach(row => {{
+            document.querySelectorAll('.profile-row').forEach(row => {
                 const matchName = row.getAttribute('data-name').includes(q);
                 const matchStatus = (st === 'all') || (row.getAttribute('data-status') === st);
                 row.style.display = (matchName && matchStatus) ? '' : 'none';
-            }});
-        }}
-        async function uploadAndRestoreBackup() {{
+            });
+        }
+        async function uploadAndRestoreBackup() {
             const fileInput = document.getElementById('dashboardBackupFile');
-            if (!fileInput.files.length) {{
+            if (!fileInput.files.length) {
                 alert('لطفاً ابتدا فایل JSON بکاپ را انتخاب کنید.');
                 return;
-            }}
+            }
             const file = fileInput.files[0];
             const reader = new FileReader();
-            reader.onload = async function(e) {{
-                try {{
+            reader.onload = async function(e) {
+                try {
                     const parsedJson = JSON.parse(e.target.result);
                     const overwrite = document.getElementById('overwrite_backup_chk').checked;
                     const btn = document.getElementById('btnUploadBackup');
                     btn.disabled = true;
                     btn.textContent = 'در حال بازگردانی...';
 
-                    const res = await fetch('/' + adminPath + '/backup/restore', {{
+                    const res = await fetch('/' + adminPath + '/backup/restore', {
                         method: 'POST',
-                        headers: {{ 'Content-Type': 'application/json' }},
-                        body: JSON.stringify({{
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
                             csrf_token: adminCsrfToken,
                             overwrite_existing: overwrite,
                             backup: parsedJson
-                        }})
-                    }});
+                        })
+                    });
                     const data = await res.json();
-                    if (data.ok) {{
+                    if (data.ok) {
                         alert(data.msg);
                         location.reload();
-                    }} else {{
+                    } else {
                         alert(data.msg || 'خطا در اعمال بکاپ');
                         btn.disabled = false;
                         btn.textContent = 'آپلود و اعمال بکاپ';
-                    }}
-                }} catch (err) {{
+                    }
+                } catch (err) {
                     alert('فرمت فایل JSON نامعتبر است.');
-                }}
-            }};
+                }
+            };
             reader.readAsText(file);
-        }}
+        }
     </script>
 </body>
 </html>"""
 
-# ----------------- مسیرهای اصلی (Routes) -----------------
+# ----------------- مسیرهای اصلی سرور (Routes) -----------------
 @app.get("/")
 async def root():
     # جهت امنیت: مسیر اصلی بدون توکن خطای 404 برمی‌گرداند
@@ -1020,11 +1282,16 @@ async def get_user_sub(token: str):
         }
     )
 
-# اندپوینت JSON اختصاصی برای فرانت‌اند React و Glisse
-@app.get("/api/profile/{token}")
-async def get_profile_api(token: str):
+# تحویل داشبورد React + Glisse برای هر کاربر به صورت مستقل و بدون نیاز به بیلد
+@app.get("/d/{token}", response_class=HTMLResponse)
+async def user_dashboard(request: Request, token: str):
+    user_agent = request.headers.get("user-agent", "")
+    if is_v2ray_client(user_agent):
+        return await get_user_sub(token)
+
     with get_db() as conn:
         profile = conn.execute("SELECT * FROM profiles WHERE token = ?", (token,)).fetchone()
+
     if not profile:
         raise HTTPException(status_code=404, detail="Profile not found")
 
@@ -1068,7 +1335,7 @@ async def get_profile_api(token: str):
     clean_domain = PUBLIC_URL.replace("https://", "").replace("http://", "").strip("/")
     sub_url = f"https://{clean_domain}/sub/{token}"
 
-    return {
+    ctx = {
         "brand_name": profile["name"],
         "custom_notice": profile["custom_notice"] or "",
         "is_blocked": is_blocked,
@@ -1084,20 +1351,7 @@ async def get_profile_api(token: str):
         "sub_url": sub_url,
         "configs": configs
     }
-
-# تحویل داشبورد React (با دکمه‌ها و المان‌های Glisse)
-@app.get("/d/{token}", response_class=HTMLResponse)
-async def user_dashboard(request: Request, token: str):
-    user_agent = request.headers.get("user-agent", "")
-    if is_v2ray_client(user_agent):
-        return await get_user_sub(token)
-
-    # خواندن فایل خروجی کامپایل‌شده Vite
-    if os.path.exists("dist/index.html"):
-        with open("dist/index.html", "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read())
-            
-    return HTMLResponse("<h3>داشبورد در حال بارگذاری است. لطفاً صفحه را تازه‌سازی کنید...</h3>")
+    return HTMLResponse(content=render_dashboard_html(ctx))
 
 # ----------------- مسیرهای مخفی ادمین -----------------
 @app.get(f"/{ADMIN_SECRET_PATH}", response_class=HTMLResponse)
@@ -1353,7 +1607,7 @@ async def delete_profile(request: Request, token: str):
     sub_cache.pop(token, None)
     return RedirectResponse(url=f"/{ADMIN_SECRET_PATH}", status_code=status.HTTP_302_FOUND)
 
-# ----------------- وب‌هوک ربات تلگرام -----------------
+# ----------------- وبهوک ربات تلگرام -----------------
 @app.post("/webhook")
 async def telegram_webhook(req: Request):
     if not BOT_TOKEN:
