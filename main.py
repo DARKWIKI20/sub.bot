@@ -723,7 +723,7 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
         <header class="p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex justify-between items-center shadow-lg">
             <div>
                 <h1 class="text-lg sm:text-xl font-extrabold tracking-wide">__BRAND_NAME__</h1>
-                <div class="text-xs text-blue-400 font-mono mt-0.5">High Speed Dedicated Cloud</div>
+                <div class="text-xs text-blue-400 font-mono mt-0.5">SUB LINK</div>
             </div>
             <button type="button" onclick="location.reload()" class="ui-btn gap-2" title="تازه‌سازی داده‌ها">
                 <svg class="w-3.5 h-3.5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
@@ -1206,9 +1206,9 @@ ADMIN_PANEL_GLISSE_TEMPLATE = """<!DOCTYPE html>
                         <TabBar
                             aria-label="Admin Navigation"
                             items={[
-                                { value: "profiles", label: "فهرست اشتراک‌ها" },
-                                { value: "new_profile", label: "ثبت ساب جدید" },
-                                { value: "backup_view", label: "بازیابی بکاپ" }
+                                { value: "profiles", label: "اشتراک ها" },
+                                { value: "new_profile", label: "ثبت ساب" },
+                                { value: "backup_view", label: "بکاپ" }
                             ]}
                             value={view}
                             onValueChange={setView}
