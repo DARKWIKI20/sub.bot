@@ -526,7 +526,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
     
     <style>
         :root {
-            --bg-base: #06080e;
+            --bg-base: #080a10;
         }
         * { box-sizing: border-box; }
         body {
@@ -549,6 +549,31 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             border: 1px solid rgba(255, 255, 255, 0.07);
             border-radius: 1.25rem;
         }
+
+        /* اسکرول‌بار شیشه‌ای مات و یکپارچه (Liquid Glass Scrollbar) */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.18);
+            backdrop-filter: blur(8px);
+            -webkit-backdrop-filter: blur(8px);
+            border-radius: 9999px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.3);
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.32);
+            border-color: rgba(255, 255, 255, 0.25);
+        }
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: rgba(255, 255, 255, 0.18) transparent;
+        }
     </style>
 
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -559,7 +584,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
     <script type="text/babel" data-type="module">
         import React, { useState, useMemo } from 'https://esm.sh/react@18.3.1';
         import ReactDOM from 'https://esm.sh/react-dom@18.3.1/client';
-        import { Button, TabBar, SegmentedControl, Menu, Input, Switch } from 'https://esm.sh/glisse@0.5.0?deps=react@18.3.1,react-dom@18.3.1';
+        import { Button, TabBar, SegmentedControl, Menu, Input } from 'https://esm.sh/glisse@0.5.0?deps=react@18.3.1,react-dom@18.3.1';
 
         const DATA = __CTX_DATA__;
 
@@ -567,7 +592,6 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             const [filter, setFilter] = useState("all");
             const [tab, setTab] = useState("android");
             const [search, setSearch] = useState("");
-            const [isOnline, setIsOnline] = useState(DATA.is_online);
             const [toast, setToast] = useState("");
             const [qrUrl, setQrUrl] = useState(null);
 
@@ -593,17 +617,16 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                 <div className="min-h-screen p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto space-y-6">
                     <main className="space-y-6">
                         
-                        {/* ۱. هدر شیشه‌ای و منوی گزینه‌ها */}
+                        {/* ۱. هدر شیشه‌ای با دکمه تازه‌سازی و منوی دسترسی سریع */}
                         <header className="p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl flex justify-between items-center shadow-lg">
                             <div>
                                 <h1 className="text-lg sm:text-xl font-extrabold tracking-wide">{DATA.brand_name}</h1>
-                                <div className="text-xs text-blue-400 font-mono mt-0.5">Liquid Glass • Dashboard</div>
+                                <div className="text-xs text-blue-400 font-mono mt-0.5">Liquid Glass Dashboard</div>
                             </div>
-                            <div className="flex items-center gap-3">
-                                <div className="hidden sm:flex items-center gap-2">
-                                    <span className="text-xs text-slate-300 font-medium">سنسور اتصال:</span>
-                                    <Switch aria-label="Live Status" checked={isOnline} onCheckedChange={setIsOnline} />
-                                </div>
+                            <div className="flex items-center gap-2">
+                                <Button variant="glass" onClick={() => location.reload()} title="بروزرسانی داده‌ها">
+                                    تازه‌سازی
+                                </Button>
                                 <Menu
                                     aria-label="Options"
                                     items={[
@@ -617,10 +640,10 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </header>
 
-                        {/* ۲. کارت‌های اصلی دقیقا بر اساس تصویر ضمیمه شده */}
+                        {/* ۲. کارت‌های شاخص عملکرد و گیج مصرف (مطابق طرح ارسالی) */}
                         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
                             
-                            {/* کارت بزرگ سمت راست (یا ردیف اول) */}
+                            {/* کارت بزرگ سمت راست: وضعیت، روزشمار، گیج و حجم‌ها */}
                             <div className="lg:col-span-2 stats-box p-6 flex flex-col justify-between shadow-xl">
                                 <div className="flex justify-between items-start mb-6">
                                     <div className="text-left">
@@ -641,7 +664,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 </div>
 
                                 <div className="flex items-center justify-between gap-6">
-                                    {/* اطلاعات متنی سمت چپ */}
+                                    {/* ستون متن و ارقام مصرف */}
                                     <div className="space-y-3 flex-1">
                                         <div className="flex justify-between items-center text-sm">
                                             <span className="mono-num font-bold text-slate-100 text-base">{DATA.total_quota}</span>
@@ -657,7 +680,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                         </div>
                                     </div>
 
-                                    {/* گیج دایره‌ای سمت راست */}
+                                    {/* گیج دایره‌ای استاندارد */}
                                     <div className="relative w-32 h-32 shrink-0 flex items-center justify-center">
                                         <svg className="transform -rotate-90 w-full h-full" viewBox="0 0 120 120">
                                             <circle cx="60" cy="60" r="48" stroke="rgba(255,255,255,0.06)" strokeWidth="9" fill="none"></circle>
@@ -673,7 +696,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 </div>
                             </div>
 
-                            {/* ۳ کارت عمودی ستون چپ */}
+                            {/* ۳ کارت عمودی ستون کناری */}
                             <div className="flex flex-col gap-4">
                                 <div className="stats-box p-4 flex flex-col justify-between flex-1">
                                     <div className="text-xs text-slate-400 text-right">حجم کل</div>
@@ -686,7 +709,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 <div className="stats-box p-4 flex flex-col justify-between flex-1">
                                     <div className="text-xs text-slate-400 text-right">آخرین اتصال</div>
                                     <div className="text-sm font-bold mono-num text-slate-100 text-left mt-2 flex items-center justify-end gap-1.5" dir="ltr">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block shadow-[0_0_6px_rgba(52,211,153,0.6)]"></span>
                                         <span>{DATA.last_seen_text || DATA.now_jalali}</span>
                                     </div>
                                 </div>
@@ -694,28 +717,30 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
 
                         </div>
 
-                        {/* ۳. ردیف آدرس ساب و دکمه‌های کنترلی Glisse Button */}
-                        <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-3">
-                            <div className="w-full sm:flex-1 min-w-0">
-                                <div className="text-xs text-slate-400 mb-1">لینک اختصاصی اشتراک:</div>
-                                <div className="mono-num text-xs text-slate-200 bg-black/40 px-3 py-2 rounded-xl border border-white/5 truncate select-all">
-                                    {DATA.sub_url}
+                        {/* ۳. نوار اختصاصی و منظم لینک ساب */}
+                        <div className="stats-box p-4 sm:p-5 flex flex-col md:flex-row items-center justify-between gap-4 border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-lg">
+                            <div className="flex items-center gap-3 w-full md:w-auto min-w-0">
+                                <div className="w-10 h-10 rounded-xl bg-blue-500/15 border border-blue-400/25 flex items-center justify-center text-blue-400 shrink-0">
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
+                                </div>
+                                <div className="min-w-0 flex-1">
+                                    <div className="text-xs text-slate-400 font-medium mb-1">لینک اختصاصی اشتراک هوشمند:</div>
+                                    <div className="mono-num text-xs text-slate-200 bg-black/50 px-3 py-1.5 rounded-lg border border-white/5 truncate select-all">
+                                        {DATA.sub_url}
+                                    </div>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end pt-1 sm:pt-4">
-                                <Button variant="filled" onClick={() => copyText(DATA.sub_url, "آدرس ساب کپی شد")}>
+                            <div className="flex items-center gap-2.5 w-full md:w-auto shrink-0 justify-end">
+                                <Button variant="filled" onClick={() => copyText(DATA.sub_url, "لینک اشتراک کپی شد")}>
                                     کپی لینک ساب
                                 </Button>
                                 <Button variant="glass" onClick={() => setQrUrl(DATA.sub_url)}>
                                     اسکن QR
                                 </Button>
-                                <Button variant="destructive" onClick={() => location.reload()}>
-                                    تازه‌سازی
-                                </Button>
                             </div>
                         </div>
 
-                        {/* ۴. فیلتر و جستجو */}
+                        {/* ۴. فیلتر و جستجو با SegmentedControl و Input */}
                         <div className="space-y-3">
                             <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                                 <div dir="ltr" className="w-full sm:w-auto">
@@ -735,7 +760,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                     <Input
                                         type="search"
                                         aria-label="Search"
-                                        placeholder="جستجوی کانفیگ..."
+                                        placeholder="جستجوی سرور..."
                                         value={search}
                                         onValueChange={setSearch}
                                     />
@@ -1193,151 +1218,6 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
 </body>
 </html>"""
 
-def render_login_html(admin_path: str, error: str = None) -> str:
-    err_box = f'<div class="p-3 mb-4 rounded-xl text-xs font-semibold text-center border border-rose-500/30 bg-rose-500/15 text-rose-400">{html.escape(error)}</div>' if error else ""
-    return f"""<!DOCTYPE html>
-<html lang="fa" dir="rtl" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ورود مدیریت دیتاسنتر</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
-    <style>{ADMIN_PANEL_CSS}</style>
-</head>
-<body class="min-h-screen flex items-center justify-center p-4">
-    <div class="glass-container w-full max-w-sm p-6 sm:p-8">
-        <h1 class="text-base font-bold text-center mb-1">احراز هویت سرور</h1>
-        <p class="text-xs text-slate-400 text-center mb-6">کنترل پنل مرکزی دیتاسنتر</p>
-        {err_box}
-        <form action="/{admin_path}/login" method="post" class="space-y-4">
-            <div>
-                <label for="admin_pass" class="block text-xs text-slate-400 mb-1.5 font-medium">رمز عبور امنیتی</label>
-                <input id="admin_pass" type="password" name="password" required autofocus class="glass-input mono-num text-left">
-            </div>
-            <button type="submit" class="btn-glass btn-primary w-full py-2.5">ورود به سیستم</button>
-        </form>
-    </div>
-</body>
-</html>"""
-
-def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -> str:
-    total_count = len(profiles)
-    blocked_count = sum(1 for p in profiles if p["is_blocked"])
-    active_count = total_count - blocked_count
-    total_hits = sum((p["sub_hits"] or 0) for p in profiles)
-    cached_items = len(sub_cache)
-
-    rows = ""
-    for p in profiles:
-        safe_name = html.escape(p["name"])
-        safe_token = html.escape(p["token"])
-        safe_note = html.escape(p["admin_note"] or "")
-        safe_notice = html.escape(p["custom_notice"] or "")
-        hits = p["sub_hits"] or 0
-        last_fetch = html.escape(p["last_sub_fetch"] or "بدون اتصال")
-        fake_val = p["fake_total_gb"] or 0
-
-        cached_data = sub_cache.get(p["token"])
-        if cached_data and cached_data.get("info"):
-            info = cached_data["info"]
-            u, d, tot = apply_fake_traffic(info.get("upload", 0), info.get("download", 0), info.get("total", 0), fake_val)
-            traffic_badge = f"<span class='text-xs mono-num text-slate-200'>{format_bytes(u+d)} / {format_bytes(tot)}</span>"
-            
-            if cached_data.get("is_online"):
-                online_badge = '<span class="inline-flex items-center gap-1.5 text-xs text-emerald-400 font-semibold"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>متصل</span>'
-            else:
-                last_s = cached_data.get("last_seen_text", "نامشخص")
-                online_badge = f'<span class="text-xs text-slate-400">{last_s}</span>'
-        else:
-            traffic_badge = "<span class='text-xs text-slate-500'>—</span>"
-            online_badge = "<span class='text-xs text-slate-500'>—</span>"
-
-        status_badge = (
-            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-400">مسدود</span>'
-            if p["is_blocked"] else
-            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">فعال</span>'
-        )
-        fake_label = f"<span class='mono-num text-xs text-blue-400 font-bold'>{fake_val:g} GB</span>" if fake_val > 0 else "<span class='text-slate-500 text-xs'>واقعی</span>"
-        
-        btn_class = "btn-glass text-emerald-400 border-emerald-500/30" if p["is_blocked"] else "btn-glass text-amber-400 border-amber-500/30"
-        btn_text = "فعال‌سازی" if p["is_blocked"] else "مسدود"
-        
-        p_json = html.escape(json.dumps({
-            "token": p["token"],
-            "name": p["name"],
-            "upstream_url": p["upstream_url"],
-            "fake_total_gb": fake_val,
-            "custom_notice": p["custom_notice"] or "",
-            "admin_note": p["admin_note"] or ""
-        }))
-
-        dash_url = f"https://{domain}/d/{safe_token}"
-        sub_url = f"https://{domain}/sub/{safe_token}"
-        note_html = f'<div class="text-[11px] text-amber-400/80 mt-1 font-mono leading-tight">{safe_note}</div>' if safe_note else ''
-        notice_indicator = '<span class="inline-block mr-1 text-[10px] px-1.5 py-0.2 rounded border border-blue-400/30 bg-blue-500/15 text-blue-300">اعلان</span>' if safe_notice else ''
-
-        rows += f"""
-        <tr class="profile-row border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors" data-name="{safe_name.lower()} {safe_token.lower()} {safe_note.lower()}" data-status="{'blocked' if p['is_blocked'] else 'active'}">
-            <td class="p-3.5 whitespace-nowrap">
-                <div class="font-bold text-sm text-slate-200">{safe_name} {notice_indicator}</div>
-                {note_html}
-            </td>
-            <td class="p-3.5 whitespace-nowrap">
-                <div class="flex items-center gap-1.5">
-                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn-glass px-2.5 py-1 text-xs">داشبورد</button>
-                    <button type="button" onclick="copyText('{sub_url}', 'لینک اشتراک کپی شد')" class="btn-glass px-2.5 py-1 text-xs">ساب</button>
-                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn-glass p-1.5" title="QR Code">
-                        <svg class="w-3.5 h-3.5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-                    </button>
-                </div>
-            </td>
-            <td class="p-3.5 whitespace-nowrap text-center">{online_badge}</td>
-            <td class="p-3.5 whitespace-nowrap text-center">{fake_label}</td>
-            <td class="p-3.5 whitespace-nowrap text-center">{traffic_badge}</td>
-            <td class="p-3.5 whitespace-nowrap">
-                <div class="text-xs font-semibold mono-num text-slate-300">{hits} بار</div>
-                <div class="text-[11px] text-slate-500 mt-0.5">{last_fetch}</div>
-            </td>
-            <td class="p-3.5 whitespace-nowrap text-center">{status_badge}</td>
-            <td class="p-3.5 whitespace-nowrap text-left">
-                <div class="flex justify-end items-center gap-1.5">
-                    <button type="button" onclick="openEditModal({p_json})" class="btn-glass px-2.5 py-1 text-xs">ویرایش</button>
-                    <form action="/{admin_path}/profiles/{safe_token}/refresh-cache" method="post" class="m-0">
-                        <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-glass p-1.5 text-slate-300" title="تازه‌سازی کش">
-                            <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
-                        </button>
-                    </form>
-                    <form action="/{admin_path}/profiles/{safe_token}/toggle-block" method="post" class="m-0">
-                        <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-glass px-2.5 py-1 text-xs {btn_class}">{btn_text}</button>
-                    </form>
-                    <form action="/{admin_path}/profiles/{safe_token}/delete" method="post" class="m-0" onsubmit="return confirm('تایید حذف نهایی ساب؟');">
-                        <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-glass btn-danger px-2.5 py-1 text-xs">حذف</button>
-                    </form>
-                </div>
-            </td>
-        </tr>"""
-
-    if not rows:
-        rows = '<tr><td colspan="8" class="p-8 text-center text-slate-500 text-xs">هنوز هیچ اشتراکی ساخته نشده است.</td></tr>'
-
-    return (
-        ADMIN_HTML_TEMPLATE
-        .replace("__DOMAIN__", domain)
-        .replace("__ADMIN_PATH__", admin_path)
-        .replace("__CSRF_TOKEN__", csrf_token)
-        .replace("__CACHED_ITEMS__", str(cached_items))
-        .replace("__TOTAL_COUNT__", str(total_count))
-        .replace("__ACTIVE_COUNT__", str(active_count))
-        .replace("__BLOCKED_COUNT__", str(blocked_count))
-        .replace("__TOTAL_HITS__", str(total_hits))
-        .replace("__ROWS__", rows)
-        .replace("__CSS__", ADMIN_PANEL_CSS)
-    )
-
 # ----------------- مسیرهای اصلی سرور (Routes) -----------------
 @app.get("/")
 async def root():
@@ -1380,6 +1260,7 @@ async def get_user_sub(token: str):
         }
     )
 
+# تحویل داشبورد React + Glisse برای هر کاربر بدون نیاز به بیلد nodejs
 @app.get("/d/{token}", response_class=HTMLResponse)
 async def user_dashboard(request: Request, token: str):
     user_agent = request.headers.get("user-agent", "")
