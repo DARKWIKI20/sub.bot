@@ -29,6 +29,7 @@ PUBLIC_URL = (
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "SuperSecretLongPassword_987654321_ChangeMe!")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "")
 
+# مسیر امنیتی و مخفی ورود به پنل ادمین
 ADMIN_SECRET_PATH = os.getenv("ADMIN_SECRET_PATH", "manage-panel-x92").strip("/")
 
 SECRET_KEY = hashlib.sha256(f"{ADMIN_PASSWORD}_datacenter_v3_salt".encode()).digest()
@@ -221,7 +222,7 @@ async def read_bounded_form(request: Request) -> dict:
         raise HTTPException(status_code=413, detail="Payload too large")
     return urllib.parse.parse_qs(body.decode("utf-8", errors="ignore"))
 
-# ----------------- تاریخ و ترافیک -----------------
+# ----------------- محاسبات تاریخ و ترافیک -----------------
 PERSIAN_DIGITS = str.maketrans("0123456789", "۰۱۲۳۴۵۶۷۸۹")
 
 def to_persian_num(s: str) -> str:
@@ -633,7 +634,7 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
             display: inline-block;
         }
 
-        /* کارت‌های شیشه‌ای شفاف (Liquid Glass) */
+        /* کارت‌های شیشه‌ای مایع (Liquid Glass) */
         .glass-card {
             background: rgba(255, 255, 255, 0.03);
             backdrop-filter: blur(16px);
@@ -721,7 +722,7 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
 <body class="min-h-screen p-4 sm:p-8 flex flex-col justify-between max-w-4xl mx-auto space-y-6">
     <main class="space-y-6">
         
-        <!-- ۱. هدر شیشه‌ای با دکمه تازه‌سازی -->
+        <!-- ۱. هدر شیشه‌ای -->
         <header class="p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex justify-between items-center shadow-lg">
             <div>
                 <h1 class="text-lg sm:text-xl font-extrabold tracking-wide">__BRAND_NAME__</h1>
@@ -733,7 +734,7 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
             </button>
         </header>
 
-        <!-- ۲. کارت‌های اصلی با روزشمار و آخرین اتصال در کنار هم و پس‌زمینه شیشه‌ای -->
+        <!-- ۲. کارت‌های اصلی (با روزشمار و اتصال در کنار هم و حذف کارت سمت چپ) -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
             
             <!-- کارت بزرگ: وضعیت، روزشمار به همراه اتصال در کنار آن، گیج و حجم‌ها -->
@@ -742,7 +743,7 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
                     <div>
                         __STATUS_BADGE__
                     </div>
-                    <!-- وضعیت زنده اتصال درست در کنار روزشمار با فونت هماهنگ فارسی -->
+                    <!-- وضعیت زنده اتصال درست در کنار روزشمار -->
                     <div class="flex items-center gap-3">
                         __ONLINE_STATUS_BOX__
                         <div class="text-left bg-white/[0.03] border border-white/10 px-3.5 py-1.5 rounded-xl">
@@ -784,22 +785,15 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
                 </div>
             </div>
 
-            <!-- ۳ کارت عمودی ستون کناری با فونت فارسی یکپارچه و پس‌زمینه شیشه‌ای شفاف -->
+            <!-- ۲ کارت عمودی ستون کناری (کارت آخرین اتصال از اینجا حذف شده و فضا منظم شد) -->
             <div class="flex flex-col gap-4">
-                <div class="glass-card p-4 flex flex-col justify-between flex-1">
-                    <div class="text-xs text-slate-400 text-right">حجم کل</div>
+                <div class="glass-card p-5 flex flex-col justify-between flex-1">
+                    <div class="text-xs text-slate-400 text-right">حجم کل سرویس</div>
                     <div class="text-2xl font-bold mono-num text-slate-100 text-left mt-2">__TOTAL_QUOTA__</div>
                 </div>
-                <div class="glass-card p-4 flex flex-col justify-between flex-1">
+                <div class="glass-card p-5 flex flex-col justify-between flex-1">
                     <div class="text-xs text-slate-400 text-right">تاریخ انقضا</div>
                     <div class="text-base font-bold vazir-num text-slate-100 text-right mt-2">__EXPIRE_DATE__</div>
-                </div>
-                <div class="glass-card p-4 flex flex-col justify-between flex-1">
-                    <div class="text-xs text-slate-400 text-right">آخرین اتصال</div>
-                    <div class="text-sm font-bold vazir-num text-slate-100 text-right mt-2 flex items-center justify-start gap-1.5">
-                        <span class="w-2 h-2 rounded-full __SIDE_DOT_COLOR__ inline-block"></span>
-                        <span>__LAST_SEEN_DISPLAY__</span>
-                    </div>
                 </div>
             </div>
 
@@ -848,7 +842,7 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
             </div>
         </div>
 
-        <!-- ۵. تب‌بار کلاینت‌ها (تفکیک ۵ سیستم‌عامل با ۴ برنامه اختصاصی برای هر کدام) -->
+        <!-- ۵. تب‌بار کلاینت‌ها (۵ سیستم‌عامل با ۴ برنامه اختصاصی برای هر کدام) -->
         <div class="pt-2 space-y-3">
             <div class="text-xs text-slate-400 text-center font-semibold">دانلود نرم‌افزار اتصال مخصوص سیستم شما</div>
             <div class="flex justify-center flex-wrap gap-1.5 p-1 rounded-xl bg-white/[0.03] border border-white/10 w-fit mx-auto">
@@ -892,6 +886,7 @@ DASHBOARD_HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
     </main>
 
+    <!-- فوتر -->
     <footer class="pt-8 pb-4 text-center">
         <a href="https://t.me/DARK_WIKI20" target="_blank" rel="noopener noreferrer" class="text-xs text-slate-400 hover:text-slate-200 transition-colors">
             پشتیبانی تلگرام: <span class="mono-num font-bold text-blue-400">@DARK_WIKI20</span>
@@ -1007,16 +1002,11 @@ def render_dashboard_html(ctx: dict) -> str:
         '<div class="text-2xl font-bold text-emerald-400 flex items-center gap-2">فعال <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]"></span></div>'
     )
 
-    # نمایش وضعیت اتصال در کنار روزشمار
     if ctx["is_online"]:
         online_status_box = '<div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 text-xs font-bold"><span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)] animate-pulse"></span>در حال استفاده (روشن)</div>'
-        side_dot_color = "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]"
-        last_seen_display = '<span class="text-emerald-400 font-bold">در حال استفاده</span>'
     else:
         last_s = ctx["last_seen_text"] or ctx["now_jalali"]
         online_status_box = f'<div class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/[0.04] border border-white/10 text-slate-300 text-xs font-medium"><span class="w-2 h-2 rounded-full bg-slate-500"></span>آخرین اتصال: <span class="vazir-num text-slate-200">{last_s}</span></div>'
-        side_dot_color = "bg-slate-500"
-        last_seen_display = f'<span class="vazir-num text-slate-200">{last_s}</span>'
 
     return (
         DASHBOARD_HTML_TEMPLATE
@@ -1028,20 +1018,19 @@ def render_dashboard_html(ctx: dict) -> str:
         .replace("__USED_TRAFFIC__", str(ctx["used_traffic"]))
         .replace("__REMAINING_TRAFFIC__", str(ctx["remaining_traffic"]))
         .replace("__EXPIRE_DATE__", str(ctx["expire_date"]))
-        .replace("__LAST_SEEN_DISPLAY__", last_seen_display)
-        .replace("__SIDE_DOT_COLOR__", side_dot_color)
         .replace("__SUB_URL__", str(ctx["sub_url"]))
         .replace("__PERCENT__", str(percent))
         .replace("__DASHOFFSET__", str(dashoffset))
         .replace("__CONFIG_ROWS__", config_rows)
     )
 
-# ----------------- قالب و توابع پنل ادمین -----------------
+# ----------------- بازطراحی کامل پنل ادمین با متریال LIQUID GLASS (GLISSE STYLE) -----------------
 ADMIN_PANEL_CSS = """
 :root {
-    --bg-base: #07090e;
-    --glass-bg: rgba(18, 24, 38, 0.65);
-    --glass-border: rgba(255, 255, 255, 0.12);
+    --bg-base: #06080e;
+    --glass-bg: rgba(18, 24, 38, 0.45);
+    --glass-border: rgba(255, 255, 255, 0.08);
+    --glass-rim: rgba(255, 255, 255, 0.22);
 }
 * { box-sizing: border-box; }
 body {
@@ -1049,51 +1038,98 @@ body {
     background-color: var(--bg-base);
     color: #f1f5f9;
     min-height: 100vh;
+    background-image: 
+        radial-gradient(circle at 12% 18%, rgba(59, 130, 246, 0.12) 0%, transparent 45%),
+        radial-gradient(circle at 88% 82%, rgba(16, 185, 129, 0.08) 0%, transparent 45%);
+    background-attachment: fixed;
+    -webkit-font-smoothing: antialiased;
 }
 .mono-num {
     font-family: ui-monospace, SFMono-Regular, monospace !important;
     direction: ltr !important;
     display: inline-block;
 }
-.glass-container {
+
+/* کارت شیشه‌ای مایع اپل (Apple Liquid Glass) */
+.liquid-glass-card {
     background: var(--glass-bg);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
     border: 1px solid var(--glass-border);
-    border-radius: 18px;
+    box-shadow: 
+        0 8px 32px 0 rgba(0, 0, 0, 0.35),
+        inset 0 1px 1px 0 var(--glass-rim);
+    border-radius: 1.25rem;
+    transition: border-color 0.15s ease;
 }
-.btn-glass {
+.liquid-glass-card:hover {
+    border-color: rgba(255, 255, 255, 0.16);
+}
+
+/* دکمه‌های لنزی شیشه‌ای */
+.glass-btn {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 0.4rem;
     padding: 0.55rem 1rem;
     font-size: 0.8125rem;
     font-weight: 600;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: 
+        0 4px 12px rgba(0, 0, 0, 0.2),
+        inset 0 1px 1px rgba(255, 255, 255, 0.3);
     color: #ffffff;
     cursor: pointer;
-    transition: all 0.15s ease;
+    user-select: none;
+    transition: transform 0.15s cubic-bezier(0.23, 1, 0.32, 1), background 0.15s ease, border-color 0.15s ease;
 }
-.btn-glass:hover {
-    background: rgba(255, 255, 255, 0.12);
-    border-color: rgba(255, 255, 255, 0.3);
+.glass-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-1px);
 }
-.btn-primary { background: #2563eb; border-color: #3b82f6; }
-.btn-primary:hover { background: #1d4ed8; }
-.btn-danger { background: rgba(244, 63, 94, 0.15); border-color: rgba(244, 63, 94, 0.35); color: #fb7185; }
+.glass-btn:active {
+    transform: scale(0.97);
+}
+
+.glass-btn-primary {
+    background: linear-gradient(180deg, #3b82f6 0%, #2563eb 100%);
+    border: 1px solid rgba(147, 197, 253, 0.4);
+    box-shadow: 0 4px 16px rgba(37, 99, 235, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.5);
+}
+.glass-btn-primary:hover {
+    background: linear-gradient(180deg, #60a5fa 0%, #1d4ed8 100%);
+}
+
+.glass-btn-danger {
+    background: rgba(244, 63, 94, 0.12);
+    border-color: rgba(244, 63, 94, 0.3);
+    color: #fb7185;
+}
+.glass-btn-danger:hover {
+    background: rgba(244, 63, 94, 0.22);
+    border-color: rgba(244, 63, 94, 0.5);
+}
+
 .glass-input {
     width: 100%;
-    background: rgba(10, 14, 22, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 10px;
-    padding: 0.6rem 0.85rem;
+    background: rgba(10, 14, 22, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.5);
+    border-radius: 0.75rem;
+    padding: 0.65rem 0.875rem;
     font-size: 0.8125rem;
     color: #ffffff;
     outline: none;
+    transition: all 0.15s ease;
 }
-.glass-input:focus { border-color: #3b82f6; }
+.glass-input:focus {
+    border-color: rgba(59, 130, 246, 0.6);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15), inset 0 1px 2px rgba(0,0,0,0.5);
+}
 """
 
 ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
@@ -1108,91 +1144,107 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
 </head>
 <body class="min-h-screen p-4 sm:p-6 lg:p-8">
     <div class="max-w-7xl mx-auto space-y-6">
-        <header class="glass-container p-5 flex flex-wrap justify-between items-center gap-4">
-            <div>
-                <h1 class="text-base font-bold text-slate-100">کنترل پنل مرکزی دیتاسنتر</h1>
-                <div class="text-xs text-slate-400 mono-num mt-0.5">__DOMAIN__</div>
+        
+        <!-- هدر کنترل پنل شیشه‌ای -->
+        <header class="liquid-glass-card p-5 flex flex-wrap justify-between items-center gap-4">
+            <div class="flex items-center gap-3.5">
+                <div class="w-11 h-11 rounded-2xl bg-blue-500/15 border border-blue-400/30 flex items-center justify-center text-blue-400 shadow-inner">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                </div>
+                <div>
+                    <h1 class="text-base font-extrabold text-slate-100">کنترل پنل مرکزی دیتاسنتر</h1>
+                    <div class="text-xs text-slate-400 mono-num mt-0.5">__DOMAIN__</div>
+                </div>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
+            <div class="flex flex-wrap items-center gap-2.5">
                 <form action="/__ADMIN_PATH__/cache/clear" method="post" class="m-0">
                     <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
-                    <button type="submit" class="btn-glass px-3 py-2 text-xs">پاکسازی کش (__CACHED_ITEMS__)</button>
+                    <button type="submit" class="glass-btn text-xs">پاکسازی کش (__CACHED_ITEMS__)</button>
                 </form>
-                <a href="/__ADMIN_PATH__/backup" class="btn-glass px-3 py-2 text-xs text-blue-300">دانلود بکاپ JSON</a>
-                <a href="/__ADMIN_PATH__/logout" class="btn-glass btn-danger px-3 py-2 text-xs">خروج</a>
+                <a href="/__ADMIN_PATH__/backup" class="glass-btn text-blue-300 text-xs">دانلود بکاپ JSON</a>
+                <a href="/__ADMIN_PATH__/logout" class="glass-btn glass-btn-danger text-xs">خروج</a>
             </div>
         </header>
 
-        <section class="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-            <div class="glass-container p-4">
-                <div class="text-xs text-slate-400 mb-1">کل اشتراک‌ها</div>
-                <div class="text-2xl font-bold mono-num text-slate-100">__TOTAL_COUNT__</div>
+        <!-- کارت‌های KPI آمار کل سیستم -->
+        <section class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="liquid-glass-card p-5 flex flex-col justify-between">
+                <div class="text-xs text-slate-400 mb-1 font-medium">کل اشتراک‌ها</div>
+                <div class="text-3xl font-black mono-num text-slate-100">__TOTAL_COUNT__</div>
             </div>
-            <div class="glass-container p-4">
-                <div class="text-xs text-slate-400 mb-1">فعال</div>
-                <div class="text-2xl font-bold mono-num text-emerald-400">__ACTIVE_COUNT__</div>
+            <div class="liquid-glass-card p-5 flex flex-col justify-between">
+                <div class="text-xs text-slate-400 mb-1 font-medium">اشتراک‌های فعال</div>
+                <div class="text-3xl font-black mono-num text-emerald-400">__ACTIVE_COUNT__</div>
             </div>
-            <div class="glass-container p-4">
-                <div class="text-xs text-slate-400 mb-1">مسدود شده</div>
-                <div class="text-2xl font-bold mono-num text-rose-400">__BLOCKED_COUNT__</div>
+            <div class="liquid-glass-card p-5 flex flex-col justify-between">
+                <div class="text-xs text-slate-400 mb-1 font-medium">مسدود شده</div>
+                <div class="text-3xl font-black mono-num text-rose-400">__BLOCKED_COUNT__</div>
             </div>
-            <div class="glass-container p-4">
-                <div class="text-xs text-slate-400 mb-1">سینک‌های کلاینت</div>
-                <div class="text-2xl font-bold mono-num text-blue-400">__TOTAL_HITS__</div>
+            <div class="liquid-glass-card p-5 flex flex-col justify-between">
+                <div class="text-xs text-slate-400 mb-1 font-medium">درخواست‌های آپدیت</div>
+                <div class="text-3xl font-black mono-num text-blue-400">__TOTAL_HITS__</div>
             </div>
         </section>
 
+        <!-- فرم ثبت و بازیابی بکاپ شیشه‌ای -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <section class="lg:col-span-2 glass-container p-5">
-                <h2 class="text-sm font-bold text-slate-200 mb-4">ثبت اشتراک جدید</h2>
-                <form action="/__ADMIN_PATH__/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+            <section class="lg:col-span-2 liquid-glass-card p-6">
+                <h2 class="text-sm font-bold text-slate-200 mb-4 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                    <span>ثبت اشتراک جدید</span>
+                </h2>
+                <form action="/__ADMIN_PATH__/profiles/add" method="post" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
                     <div>
-                        <label class="block text-xs text-slate-400 mb-1">نام یا شناسه کاربر *</label>
+                        <label class="block text-xs text-slate-400 mb-1.5 font-medium">نام یا شناسه کاربر *</label>
                         <input type="text" name="name" placeholder="User-VIP" required class="glass-input">
                     </div>
                     <div>
-                        <label class="block text-xs text-slate-400 mb-1">لینک مستقیم فروشنده (Upstream) *</label>
+                        <label class="block text-xs text-slate-400 mb-1.5 font-medium">لینک مستقیم فروشنده (Upstream) *</label>
                         <input type="url" name="upstream_url" placeholder="https://panel.site/sub/..." required class="glass-input mono-num text-left">
                     </div>
                     <div>
-                        <label class="block text-xs text-slate-400 mb-1">حجم مجازی کل (GB) — اختیاری</label>
+                        <label class="block text-xs text-slate-400 mb-1.5 font-medium">حجم مجازی کل (GB) — اختیاری</label>
                         <input type="number" step="0.1" min="0" name="fake_total_gb" placeholder="0 = حجم واقعی" class="glass-input mono-num text-left">
                     </div>
                     <div>
-                        <label class="block text-xs text-slate-400 mb-1">توکن اختصاصی لینک (اختیاری)</label>
+                        <label class="block text-xs text-slate-400 mb-1.5 font-medium">توکن اختصاصی لینک (اختیاری)</label>
                         <input type="text" name="custom_token" placeholder="خالی = خودکار" class="glass-input mono-num text-left">
                     </div>
                     <div>
-                        <label class="block text-xs text-slate-400 mb-1">اعلان داشبورد</label>
+                        <label class="block text-xs text-slate-400 mb-1.5 font-medium">اعلان داشبورد</label>
                         <input type="text" name="custom_notice" placeholder="متن پیام به کاربر..." class="glass-input">
                     </div>
                     <div>
-                        <label class="block text-xs text-slate-400 mb-1">یادداشت داخلی ادمین</label>
+                        <label class="block text-xs text-slate-400 mb-1.5 font-medium">یادداشت داخلی ادمین</label>
                         <input type="text" name="admin_note" placeholder="آیدی تلگرام، تاریخ و..." class="glass-input">
                     </div>
                     <div class="md:col-span-2 pt-2">
-                        <button type="submit" class="btn-glass btn-primary px-6 py-2.5">ایجاد و ذخیره اشتراک</button>
+                        <button type="submit" class="glass-btn glass-btn-primary px-6 py-2.5">ایجاد و ذخیره اشتراک</button>
                     </div>
                 </form>
             </section>
 
-            <section class="glass-container p-5 flex flex-col justify-between">
+            <section class="liquid-glass-card p-6 flex flex-col justify-between">
                 <div>
-                    <h2 class="text-sm font-bold text-slate-200 mb-2">بازگردانی داده‌ها از بکاپ</h2>
-                    <p class="text-xs text-slate-400 mb-4 leading-relaxed">فایل JSON بکاپ قبلی خود را برای بازیابی سریع انتخاب کنید.</p>
+                    <h2 class="text-sm font-bold text-slate-200 mb-2 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                        <span>بازیابی داده‌ها از فایل JSON</span>
+                    </h2>
+                    <p class="text-xs text-slate-400 mb-4 leading-relaxed">فایل بکاپ قبلی خود را برای بازیابی سریع تمام ساب‌ها انتخاب کنید.</p>
                     <input type="file" id="dashboardBackupFile" accept=".json" class="glass-input text-xs mb-3">
                     <label class="flex items-center gap-2 text-xs text-slate-300 select-none cursor-pointer">
                         <input type="checkbox" id="overwrite_backup_chk" class="rounded border-zinc-700 bg-zinc-900">
                         <span>به‌روزرسانی رکوردهای تکراری</span>
                     </label>
                 </div>
-                <button type="button" onclick="uploadAndRestoreBackup()" id="btnUploadBackup" class="btn-glass w-full py-2.5 mt-4 text-emerald-400">آپلود و اعمال بکاپ</button>
+                <button type="button" onclick="uploadAndRestoreBackup()" id="btnUploadBackup" class="glass-btn w-full py-2.5 mt-4 text-emerald-300">آپلود و اعمال بکاپ</button>
             </section>
         </div>
 
-        <section class="glass-container overflow-hidden">
-            <div class="p-4 border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <!-- جدول ساب‌ها با متریال شیشه‌ای مایع -->
+        <section class="liquid-glass-card overflow-hidden">
+            <div class="p-4 sm:p-5 border-b border-white/[0.06] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <h2 class="text-sm font-bold text-slate-200">فهرست اشتراک‌ها (__TOTAL_COUNT__)</h2>
                 <div class="flex items-center gap-2">
                     <input type="text" id="searchInput" oninput="filterTable()" placeholder="جستجو نام، توکن، یادداشت..." class="glass-input py-1.5 px-3 text-xs w-60">
@@ -1207,14 +1259,14 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
                 <table class="w-full text-right text-sm">
                     <thead class="bg-white/[0.02] text-slate-400 text-xs border-b border-white/[0.06]">
                         <tr>
-                            <th class="p-3.5 whitespace-nowrap">کاربر</th>
-                            <th class="p-3.5 whitespace-nowrap">لینک‌ها</th>
-                            <th class="p-3.5 whitespace-nowrap text-center">وضعیت</th>
-                            <th class="p-3.5 whitespace-nowrap text-center">حجم مجازی</th>
-                            <th class="p-3.5 whitespace-nowrap text-center">مصرف / سقف</th>
-                            <th class="p-3.5 whitespace-nowrap">همگام‌سازی</th>
-                            <th class="p-3.5 whitespace-nowrap text-center">دسترسی</th>
-                            <th class="p-3.5 text-left whitespace-nowrap">مدیریت</th>
+                            <th class="p-4 whitespace-nowrap">کاربر</th>
+                            <th class="p-4 whitespace-nowrap">لینک‌ها</th>
+                            <th class="p-4 whitespace-nowrap text-center">وضعیت</th>
+                            <th class="p-4 whitespace-nowrap text-center">حجم مجازی</th>
+                            <th class="p-4 whitespace-nowrap text-center">مصرف / سقف</th>
+                            <th class="p-4 whitespace-nowrap">همگام‌سازی</th>
+                            <th class="p-4 whitespace-nowrap text-center">دسترسی</th>
+                            <th class="p-4 text-left whitespace-nowrap">مدیریت</th>
                         </tr>
                     </thead>
                     <tbody>__ROWS__</tbody>
@@ -1223,48 +1275,50 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
         </section>
     </div>
 
-    <div id="editModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
-        <div class="glass-container p-6 max-w-md w-full shadow-2xl" onclick="event.stopPropagation()">
+    <!-- مدال ویرایش -->
+    <div id="editModal" class="fixed inset-0 bg-black/80 backdrop-blur-md hidden items-center justify-center z-50 p-4" onclick="closeEditModal()">
+        <div class="liquid-glass-card p-6 max-w-md w-full shadow-2xl" onclick="event.stopPropagation()">
             <h3 class="text-base font-bold mb-4 text-slate-100">ویرایش اطلاعات ساب</h3>
-            <form id="editForm" method="post" class="space-y-3">
+            <form id="editForm" method="post" class="space-y-3.5">
                 <input type="hidden" name="csrf_token" value="__CSRF_TOKEN__">
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">نام یا شناسه کاربر</label>
+                    <label class="block text-xs text-slate-400 mb-1 font-medium">نام یا شناسه کاربر</label>
                     <input type="text" id="edit_name" name="name" required class="glass-input">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">لینک مستقیم فروشنده</label>
+                    <label class="block text-xs text-slate-400 mb-1 font-medium">لینک مستقیم فروشنده</label>
                     <input type="url" id="edit_upstream" name="upstream_url" required class="glass-input mono-num text-left">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">حجم مجازی کل (GB)</label>
+                    <label class="block text-xs text-slate-400 mb-1 font-medium">حجم مجازی کل (GB)</label>
                     <input type="number" step="0.1" min="0" id="edit_fake" name="fake_total_gb" required class="glass-input mono-num text-left">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">اعلان داشبورد</label>
+                    <label class="block text-xs text-slate-400 mb-1 font-medium">اعلان داشبورد</label>
                     <input type="text" id="edit_notice" name="custom_notice" class="glass-input">
                 </div>
                 <div>
-                    <label class="block text-xs text-slate-400 mb-1">یادداشت داخلی ادمین</label>
+                    <label class="block text-xs text-slate-400 mb-1 font-medium">یادداشت داخلی ادمین</label>
                     <input type="text" id="edit_note" name="admin_note" class="glass-input">
                 </div>
                 <div class="flex gap-2 pt-3">
-                    <button type="submit" class="btn-glass btn-primary flex-1 py-2">ذخیره تغییرات</button>
-                    <button type="button" onclick="closeEditModal()" class="btn-glass px-4 py-2">انصراف</button>
+                    <button type="submit" class="glass-btn glass-btn-primary flex-1 py-2">ذخیره تغییرات</button>
+                    <button type="button" onclick="closeEditModal()" class="glass-btn px-4 py-2">انصراف</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <div id="adminQrModal" class="fixed inset-0 bg-black/75 backdrop-blur-sm hidden items-center justify-center z-50 p-4" onclick="closeAdminQR()">
-        <div class="glass-container p-6 max-w-xs w-full flex flex-col items-center text-center" onclick="event.stopPropagation()">
+    <!-- مدال QR -->
+    <div id="adminQrModal" class="fixed inset-0 bg-black/80 backdrop-blur-md hidden items-center justify-center z-50 p-4" onclick="closeAdminQR()">
+        <div class="liquid-glass-card p-6 max-w-xs w-full flex flex-col items-center text-center" onclick="event.stopPropagation()">
             <div id="adminQrTitle" class="font-bold text-xs text-slate-300 mb-4 truncate w-full">QR Code</div>
             <img id="adminQrImg" src="" alt="QR" class="w-48 h-48 rounded-xl mb-4 bg-white p-2.5 shadow-md">
-            <button type="button" onclick="closeAdminQR()" class="btn-glass w-full py-2 text-xs">بستن</button>
+            <button type="button" onclick="closeAdminQR()" class="glass-btn w-full py-2 text-xs">بستن</button>
         </div>
     </div>
 
-    <div id="adminToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2.5 rounded-xl bg-white/90 text-slate-900 backdrop-blur-md text-xs font-bold shadow-2xl"></div>
+    <div id="adminToast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden px-4 py-2.5 rounded-xl bg-white text-slate-900 text-xs font-bold shadow-2xl"></div>
 
     <script>
         const adminCsrfToken = "__CSRF_TOKEN__";
@@ -1367,8 +1421,11 @@ def render_login_html(admin_path: str, error: str = None) -> str:
     <style>{ADMIN_PANEL_CSS}</style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
-    <div class="glass-container w-full max-w-sm p-6 sm:p-8">
-        <h1 class="text-base font-bold text-center mb-1">احراز هویت سرور</h1>
+    <div class="liquid-glass-card w-full max-w-sm p-6 sm:p-8">
+        <div class="w-12 h-12 rounded-2xl bg-blue-500/15 border border-blue-400/30 flex items-center justify-center text-blue-400 mx-auto mb-4 shadow-inner">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
+        </div>
+        <h1 class="text-base font-extrabold text-center mb-1 text-slate-100">احراز هویت سرور</h1>
         <p class="text-xs text-slate-400 text-center mb-6">کنترل پنل مرکزی دیتاسنتر</p>
         {err_box}
         <form action="/{admin_path}/login" method="post" class="space-y-4">
@@ -1376,7 +1433,7 @@ def render_login_html(admin_path: str, error: str = None) -> str:
                 <label for="admin_pass" class="block text-xs text-slate-400 mb-1.5 font-medium">رمز عبور امنیتی</label>
                 <input id="admin_pass" type="password" name="password" required autofocus class="glass-input mono-num text-left">
             </div>
-            <button type="submit" class="btn-glass btn-primary w-full py-2.5">ورود به سیستم</button>
+            <button type="submit" class="glass-btn glass-btn-primary w-full py-2.5">ورود به سیستم</button>
         </form>
     </div>
 </body>
@@ -1418,13 +1475,13 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
             online_badge = "<span class='text-xs text-slate-500'>—</span>"
 
         status_badge = (
-            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-400">مسدود</span>'
+            '<span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold border border-rose-500/30 bg-rose-500/10 text-rose-400">مسدود</span>'
             if p["is_blocked"] else
-            '<span class="px-2 py-0.5 rounded-md text-[11px] font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">فعال</span>'
+            '<span class="px-2.5 py-0.5 rounded-full text-[11px] font-semibold border border-emerald-500/30 bg-emerald-500/10 text-emerald-400">فعال</span>'
         )
         fake_label = f"<span class='mono-num text-xs text-blue-400 font-bold'>{fake_val:g} GB</span>" if fake_val > 0 else "<span class='text-slate-500 text-xs'>واقعی</span>"
         
-        btn_class = "btn-glass text-emerald-400 border-emerald-500/30" if p["is_blocked"] else "btn-glass text-amber-400 border-amber-500/30"
+        btn_class = "glass-btn text-emerald-400 border-emerald-500/30" if p["is_blocked"] else "glass-btn text-amber-400 border-amber-500/30"
         btn_text = "فعال‌سازی" if p["is_blocked"] else "مسدود"
         
         p_json = html.escape(json.dumps({
@@ -1443,43 +1500,43 @@ def render_admin_html(profiles, domain: str, csrf_token: str, admin_path: str) -
 
         rows += f"""
         <tr class="profile-row border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors" data-name="{safe_name.lower()} {safe_token.lower()} {safe_note.lower()}" data-status="{'blocked' if p['is_blocked'] else 'active'}">
-            <td class="p-3.5 whitespace-nowrap">
+            <td class="p-4 whitespace-nowrap">
                 <div class="font-bold text-sm text-slate-200">{safe_name} {notice_indicator}</div>
                 {note_html}
             </td>
-            <td class="p-3.5 whitespace-nowrap">
+            <td class="p-4 whitespace-nowrap">
                 <div class="flex items-center gap-1.5">
-                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="btn-glass px-2.5 py-1 text-xs">داشبورد</button>
-                    <button type="button" onclick="copyText('{sub_url}', 'لینک اشتراک کپی شد')" class="btn-glass px-2.5 py-1 text-xs">ساب</button>
-                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="btn-glass p-1.5" title="QR Code">
+                    <button type="button" onclick="copyText('{dash_url}', 'لینک داشبورد کپی شد')" class="glass-btn px-2.5 py-1 text-xs">داشبورد</button>
+                    <button type="button" onclick="copyText('{sub_url}', 'لینک اشتراک کپی شد')" class="glass-btn px-2.5 py-1 text-xs">ساب</button>
+                    <button type="button" onclick="openQR('{sub_url}', '{safe_name}')" class="glass-btn p-1.5" title="QR Code">
                         <svg class="w-3.5 h-3.5 text-slate-300" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                     </button>
                 </div>
             </td>
-            <td class="p-3.5 whitespace-nowrap text-center">{online_badge}</td>
-            <td class="p-3.5 whitespace-nowrap text-center">{fake_label}</td>
-            <td class="p-3.5 whitespace-nowrap text-center">{traffic_badge}</td>
-            <td class="p-3.5 whitespace-nowrap">
+            <td class="p-4 whitespace-nowrap text-center">{online_badge}</td>
+            <td class="p-4 whitespace-nowrap text-center">{fake_label}</td>
+            <td class="p-4 whitespace-nowrap text-center">{traffic_badge}</td>
+            <td class="p-4 whitespace-nowrap">
                 <div class="text-xs font-semibold mono-num text-slate-300">{hits} بار</div>
                 <div class="text-[11px] text-slate-500 mt-0.5">{last_fetch}</div>
             </td>
-            <td class="p-3.5 whitespace-nowrap text-center">{status_badge}</td>
-            <td class="p-3.5 whitespace-nowrap text-left">
+            <td class="p-4 whitespace-nowrap text-center">{status_badge}</td>
+            <td class="p-4 whitespace-nowrap text-left">
                 <div class="flex justify-end items-center gap-1.5">
-                    <button type="button" onclick="openEditModal({p_json})" class="btn-glass px-2.5 py-1 text-xs">ویرایش</button>
+                    <button type="button" onclick="openEditModal({p_json})" class="glass-btn px-2.5 py-1 text-xs">ویرایش</button>
                     <form action="/{admin_path}/profiles/{safe_token}/refresh-cache" method="post" class="m-0">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-glass p-1.5 text-slate-300" title="تازه‌سازی کش">
+                        <button type="submit" class="glass-btn p-1.5 text-slate-300" title="تازه‌سازی کش">
                             <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
                         </button>
                     </form>
                     <form action="/{admin_path}/profiles/{safe_token}/toggle-block" method="post" class="m-0">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-glass px-2.5 py-1 text-xs {btn_class}">{btn_text}</button>
+                        <button type="submit" class="glass-btn px-2.5 py-1 text-xs {btn_class}">{btn_text}</button>
                     </form>
                     <form action="/{admin_path}/profiles/{safe_token}/delete" method="post" class="m-0" onsubmit="return confirm('تایید حذف نهایی ساب؟');">
                         <input type="hidden" name="csrf_token" value="{csrf_token}">
-                        <button type="submit" class="btn-glass btn-danger px-2.5 py-1 text-xs">حذف</button>
+                        <button type="submit" class="glass-btn glass-btn-danger px-2.5 py-1 text-xs">حذف</button>
                     </form>
                 </div>
             </td>
