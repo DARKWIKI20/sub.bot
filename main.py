@@ -276,7 +276,7 @@ def gregorian_to_jalali(gy, gm, gd):
 def now_jalali_str() -> str:
     now_dt = datetime.now()
     jy, jm, jd = gregorian_to_jalali(now_dt.year, now_dt.month, now_dt.day)
-    return to_persian_num(f"{jy}/{jm:02d}/{jd:02d} {now_dt.strftime('%H:%M')}")
+    return to_persian_num(f"{jy}/{jm:02d}/{jd:02d}, {now_dt.strftime('%H:%M')}")
 
 def parse_user_info(header_val: str, all_headers: dict = None) -> dict:
     data = {}
@@ -318,12 +318,13 @@ async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
                     if online_val:
                         ts = parse_datetime_to_timestamp(online_val)
                         if ts > 0:
+                            dt = datetime.fromtimestamp(ts)
+                            jy, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
+                            formatted_dt = to_persian_num(f"{jy}/{jm:02d}/{jd:02d}, {dt.strftime('%H:%M')}")
                             diff = time.time() - ts
-                            if 0 <= diff <= 180:
-                                return True, "متصل"
-                            return False, format_relative_time(ts)
+                            return (0 <= diff <= 180), formatted_dt
                     if data.get("is_online") is True or str(data.get("status", "")).lower() == "online":
-                        return True, "متصل"
+                        return True, now_jalali_str()
         except Exception:
             pass
 
@@ -342,10 +343,11 @@ async def fetch_upstream_online_status(upstream_url: str) -> tuple[bool, str]:
                 if match_online:
                     ts = parse_datetime_to_timestamp(match_online.group(1))
                     if ts > 0:
+                        dt = datetime.fromtimestamp(ts)
+                        jy, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
+                        formatted_dt = to_persian_num(f"{jy}/{jm:02d}/{jd:02d}, {dt.strftime('%H:%M')}")
                         diff = time.time() - ts
-                        if 0 <= diff <= 180:
-                            return True, "متصل"
-                        return False, format_relative_time(ts)
+                        return (0 <= diff <= 180), formatted_dt
         except Exception:
             pass
 
@@ -361,18 +363,16 @@ def extract_online_status(info: dict, configs: list) -> tuple[bool, str]:
             if key in info:
                 ts = parse_datetime_to_timestamp(info[key])
                 if ts > 0:
+                    dt = datetime.fromtimestamp(ts)
+                    jy, jm, jd = gregorian_to_jalali(dt.year, dt.month, dt.day)
+                    formatted_dt = to_persian_num(f"{jy}/{jm:02d}/{jd:02d}, {dt.strftime('%H:%M')}")
                     diff = now - ts
-                    if 0 <= diff <= 180:
-                        return True, "متصل"
-                    return False, format_relative_time(ts)
+                    return (0 <= diff <= 180), formatted_dt
 
         for c in configs:
             name_lower = str(c.get("name", "")).lower()
             if "online" in name_lower or "متصل" in name_lower:
-                return True, "متصل"
-            if "آخرین اتصال" in name_lower or "last seen" in name_lower:
-                clean_txt = c["name"].replace("آخرین اتصال:", "").replace("آخرین اتصال", "").replace("last seen:", "").strip()
-                return False, clean_txt if clean_txt else "نامشخص"
+                return True, now_jalali_str()
 
         return False, "نامشخص"
     except Exception:
@@ -535,14 +535,19 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             color: #f8fafc;
             min-height: 100vh;
             background-image: 
-                radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.15) 0%, transparent 45%),
-                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.1) 0%, transparent 45%);
+                radial-gradient(circle at 10% 20%, rgba(59, 130, 246, 0.12) 0%, transparent 45%),
+                radial-gradient(circle at 90% 80%, rgba(16, 185, 129, 0.08) 0%, transparent 45%);
             background-attachment: fixed;
         }
         .mono-num {
             font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
             direction: ltr !important;
             display: inline-block;
+        }
+        .stats-box {
+            background-color: #111317;
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 1.25rem;
         }
     </style>
 
@@ -554,7 +559,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
     <script type="text/babel" data-type="module">
         import React, { useState, useMemo } from 'https://esm.sh/react@18.3.1';
         import ReactDOM from 'https://esm.sh/react-dom@18.3.1/client';
-        import { Button, TabBar, SegmentedControl, Menu, Input, Slider, Switch, Glass } from 'https://esm.sh/glisse@0.5.0?deps=react@18.3.1,react-dom@18.3.1';
+        import { Button, TabBar, SegmentedControl, Menu, Input, Switch } from 'https://esm.sh/glisse@0.5.0?deps=react@18.3.1,react-dom@18.3.1';
 
         const DATA = __CTX_DATA__;
 
@@ -562,7 +567,6 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
             const [filter, setFilter] = useState("all");
             const [tab, setTab] = useState("android");
             const [search, setSearch] = useState("");
-            const [bend, setBend] = useState(45);
             const [isOnline, setIsOnline] = useState(DATA.is_online);
             const [toast, setToast] = useState("");
             const [qrUrl, setQrUrl] = useState(null);
@@ -593,7 +597,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                         <header className="p-4 sm:p-5 rounded-3xl border border-white/10 bg-white/[0.04] backdrop-blur-xl flex justify-between items-center shadow-lg">
                             <div>
                                 <h1 className="text-lg sm:text-xl font-extrabold tracking-wide">{DATA.brand_name}</h1>
-                                <div className="text-xs text-blue-400 font-mono mt-0.5">Liquid Glass • v0.5.0</div>
+                                <div className="text-xs text-blue-400 font-mono mt-0.5">Liquid Glass • Dashboard</div>
                             </div>
                             <div className="flex items-center gap-3">
                                 <div className="hidden sm:flex items-center gap-2">
@@ -613,50 +617,87 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </header>
 
-                        {/* ۲. کارت مشخصات و لنز انکسار شیشه ای Glisse <Glass> */}
-                        <div className="p-5 sm:p-6 rounded-3xl border border-white/10 bg-white/[0.03] backdrop-blur-xl shadow-xl space-y-4">
-                            <div className="flex justify-between items-center pb-2 border-b border-white/[0.06]">
-                                <div>
-                                    <div className="text-xs text-slate-400 mb-1">مصرف اشتراک جاری</div>
-                                    <div className="text-2xl sm:text-3xl font-black mono-num text-slate-100">
-                                        {DATA.used_traffic} <span className="text-sm font-normal text-slate-400">/ {DATA.total_quota}</span>
+                        {/* ۲. کارت‌های اصلی دقیقا بر اساس تصویر ضمیمه شده */}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                            
+                            {/* کارت بزرگ سمت راست (یا ردیف اول) */}
+                            <div className="lg:col-span-2 stats-box p-6 flex flex-col justify-between shadow-xl">
+                                <div className="flex justify-between items-start mb-6">
+                                    <div className="text-left">
+                                        <div className="text-xs text-slate-400 mb-1">منقضی می‌شود در</div>
+                                        <div className="text-2xl font-black mono-num text-slate-100">{DATA.days_left} روز</div>
+                                    </div>
+                                    <div>
+                                        {DATA.is_blocked ? (
+                                            <div className="text-2xl font-bold text-rose-500 flex items-center gap-2">
+                                                مسدود <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                                            </div>
+                                        ) : (
+                                            <div className="text-2xl font-bold text-emerald-400 flex items-center gap-2">
+                                                فعال <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]"></span>
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                                <div className="text-left">
-                                    <div className="text-xs text-slate-400 mb-1">اعتبار زمانی</div>
-                                    <div className="text-xl font-bold mono-num text-emerald-400">{DATA.days_left} روز</div>
+
+                                <div className="flex items-center justify-between gap-6">
+                                    {/* اطلاعات متنی سمت چپ */}
+                                    <div className="space-y-3 flex-1">
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="mono-num font-bold text-slate-100 text-base">{DATA.total_quota}</span>
+                                            <span className="text-slate-400 text-xs">حجم سرویس</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="mono-num font-bold text-slate-100 text-base">{DATA.used_traffic}</span>
+                                            <span className="text-slate-400 text-xs">حجم مصرفی</span>
+                                        </div>
+                                        <div className="flex justify-between items-center text-sm">
+                                            <span className="mono-num font-bold text-emerald-400 text-base">{DATA.remaining_traffic}</span>
+                                            <span className="text-slate-400 text-xs">حجم باقی مانده</span>
+                                        </div>
+                                    </div>
+
+                                    {/* گیج دایره‌ای سمت راست */}
+                                    <div className="relative w-32 h-32 shrink-0 flex items-center justify-center">
+                                        <svg className="transform -rotate-90 w-full h-full" viewBox="0 0 120 120">
+                                            <circle cx="60" cy="60" r="48" stroke="rgba(255,255,255,0.06)" strokeWidth="9" fill="none"></circle>
+                                            <circle cx="60" cy="60" r="48" stroke="#10b981" strokeWidth="9" fill="none"
+                                                strokeDasharray="301.59" strokeDashoffset={301.59 - (301.59 * DATA.percent / 100)}
+                                                strokeLinecap="round" className="transition-all duration-700"></circle>
+                                        </svg>
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                                            <span className="text-2xl font-black mono-num text-slate-100">{DATA.percent}%</span>
+                                            <span className="text-[11px] text-slate-400 font-medium mt-0.5">مصرف شده</span>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
-                            {/* محفظه لنز با ایزولاسیون LTR برای تثبیت انکسار */}
-                            <div className="w-full flex justify-center py-2" dir="ltr">
-                                <Glass
-                                    style={{
-                                        width: "100%",
-                                        height: 75,
-                                        borderRadius: 20,
-                                        background: "none",
-                                        "--lg-glass-bend": bend / 100,
-                                        "--lg-glass-dispersion": 0,
-                                        "--lg-blur": "2.5px",
-                                        "--lg-rim-shine": 0.25
-                                    }}
-                                />
-                            </div>
-
-                            {/* اسلایدر با کانتینر LTR جهت جلوگیری از باگ تراز درگ */}
-                            <div className="flex items-center justify-between text-xs text-slate-400 pt-1">
-                                <span>انکسار لنز شیشه (Bend: {bend}%):</span>
-                                <div className="w-40 sm:w-56" dir="ltr">
-                                    <Slider aria-label="Lens Bend" value={bend} onValueChange={setBend} min={10} max={100} />
+                            {/* ۳ کارت عمودی ستون چپ */}
+                            <div className="flex flex-col gap-4">
+                                <div className="stats-box p-4 flex flex-col justify-between flex-1">
+                                    <div className="text-xs text-slate-400 text-right">حجم کل</div>
+                                    <div className="text-2xl font-bold mono-num text-slate-100 text-left mt-2">{DATA.total_quota}</div>
+                                </div>
+                                <div className="stats-box p-4 flex flex-col justify-between flex-1">
+                                    <div className="text-xs text-slate-400 text-right">تاریخ انقضا</div>
+                                    <div className="text-sm font-bold mono-num text-slate-100 text-left mt-2">{DATA.expire_date}</div>
+                                </div>
+                                <div className="stats-box p-4 flex flex-col justify-between flex-1">
+                                    <div className="text-xs text-slate-400 text-right">آخرین اتصال</div>
+                                    <div className="text-sm font-bold mono-num text-slate-100 text-left mt-2 flex items-center justify-end gap-1.5" dir="ltr">
+                                        <span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"></span>
+                                        <span>{DATA.last_seen_text || DATA.now_jalali}</span>
+                                    </div>
                                 </div>
                             </div>
+
                         </div>
 
                         {/* ۳. ردیف آدرس ساب و دکمه‌های کنترلی Glisse Button */}
                         <div className="p-4 rounded-2xl border border-white/10 bg-white/[0.03] backdrop-blur-xl flex flex-col sm:flex-row items-center justify-between gap-3">
                             <div className="w-full sm:flex-1 min-w-0">
-                                <div className="text-xs text-slate-400 mb-1">لینک اختصاصی هوشمند:</div>
+                                <div className="text-xs text-slate-400 mb-1">لینک اختصاصی اشتراک:</div>
                                 <div className="mono-num text-xs text-slate-200 bg-black/40 px-3 py-2 rounded-xl border border-white/5 truncate select-all">
                                     {DATA.sub_url}
                                 </div>
@@ -674,7 +715,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </div>
 
-                        {/* ۴. فیلتر و جستجو با اصلاح تراز جهت */}
+                        {/* ۴. فیلتر و جستجو */}
                         <div className="space-y-3">
                             <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
                                 <div dir="ltr" className="w-full sm:w-auto">
@@ -701,7 +742,7 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 </div>
                             </div>
 
-                            {/* لیست کانفیگ‌ها با ساختار تراز شده */}
+                            {/* لیست کانفیگ‌ها */}
                             <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
                                 {filteredConfigs.length === 0 ? (
                                     <div className="p-6 text-center text-xs text-slate-500 rounded-2xl border border-white/5 bg-white/[0.01]">
@@ -732,9 +773,9 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                             </div>
                         </div>
 
-                        {/* ۵. تب‌بار کلاینت‌ها با ایزولاسیون LTR جهت حل باگ اورلپ دکمه‌ها */}
+                        {/* ۵. تب‌بار کلاینت‌ها */}
                         <div className="pt-2 space-y-3">
-                            <div className="text-xs text-slate-400 text-center font-semibold">دانلود نرم‌افزار اتصال</div>
+                            <div className="text-xs text-slate-400 text-center font-semibold">دانلود نرم‌افزار اتصال مخصوص سیستم شما</div>
                             <div dir="ltr" className="flex justify-center w-full overflow-x-auto py-1">
                                 <TabBar
                                     aria-label="Platforms"
@@ -750,7 +791,6 @@ DASHBOARD_REACT_GLISSE_TEMPLATE = """<!DOCTYPE html>
                                 />
                             </div>
                             
-                            {/* دکمه‌های متناسب با پلتفرم انتخاب شده */}
                             <div className="grid grid-cols-2 gap-3 pt-1">
                                 {tab === "android" && (
                                     <>
@@ -835,7 +875,7 @@ def render_dashboard_html(ctx: dict) -> str:
     ctx_json = json.dumps(ctx, ensure_ascii=False)
     return DASHBOARD_REACT_GLISSE_TEMPLATE.replace("__CTX_DATA__", ctx_json)
 
-# ----------------- قالب اختصاصی پنل ادمین (ایمن در برابر فواصل پایتونی) -----------------
+# ----------------- قالب اختصاصی پنل ادمین -----------------
 ADMIN_PANEL_CSS = """
 :root {
     --bg-base: #07090e;
@@ -1143,9 +1183,9 @@ ADMIN_HTML_TEMPLATE = """<!DOCTYPE html>
                         btn.disabled = false;
                         btn.textContent = 'آپلود و اعمال بکاپ';
                     }
-                } catch (err) {{
+                } catch (err) {
                     alert('فرمت فایل JSON نامعتبر است.');
-                }}
+                }
             };
             reader.readAsText(file);
         }
@@ -1340,7 +1380,6 @@ async def get_user_sub(token: str):
         }
     )
 
-# تحویل داشبورد React + Glisse برای هر کاربر بدون نیاز به بیلد nodejs
 @app.get("/d/{token}", response_class=HTMLResponse)
 async def user_dashboard(request: Request, token: str):
     user_agent = request.headers.get("user-agent", "")
